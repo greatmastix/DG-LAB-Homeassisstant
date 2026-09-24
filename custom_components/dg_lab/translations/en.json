@@ -2,11 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "DG-LAB WebSocket",
-        "description": "Choose how the DG-LAB app connects. For Home Assistant direct, enter the Home Assistant address reachable from the app.",
+        "title": "DG-LAB connection",
+        "description": "Choose how the DG-LAB app connects.",
+        "data": {
+          "connection_mode": "Connection mode"
+        }
+      },
+      "details": {
+        "title": "DG-LAB connection settings",
+        "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
         "data": {
           "name": "Name",
-          "connection_mode": "Connection mode",
           "ha_url": "Home Assistant URL (direct mode)",
           "url": "WebSocket relay URL (relay mode)",
           "connect_timeout": "Relay connect timeout",
@@ -26,10 +32,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "DG-LAB WebSocket options",
+        "title": "DG-LAB connection mode",
+        "data": {
+          "connection_mode": "Connection mode"
+        }
+      },
+      "details": {
+        "title": "DG-LAB connection settings",
+        "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
         "data": {
           "name": "Name",
-          "connection_mode": "Connection mode",
           "ha_url": "Home Assistant URL (direct mode)",
           "url": "WebSocket relay URL (relay mode)",
           "connect_timeout": "Relay connect timeout",

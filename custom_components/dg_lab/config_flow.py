@@ -79,34 +79,57 @@ def _validate_ha_url(value: str) -> str:
     return value
 
 
-def _schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
-    """Return the flow schema."""
-    defaults = defaults or {}
+def _mode_schema(mode: str) -> vol.Schema:
+    """Choose the connection mode before showing mode-specific fields."""
     return vol.Schema(
         {
-            vol.Required(
-                CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME)
-            ): cv.string,
-            vol.Required(
-                CONF_CONNECTION_MODE,
-                default=defaults.get(CONF_CONNECTION_MODE, MODE_LOCAL),
-            ): vol.In({MODE_LOCAL: "Home Assistant direct", MODE_RELAY: "V4 relay"}),
-            vol.Optional(CONF_HA_URL, default=defaults.get(CONF_HA_URL, "")): cv.string,
+            vol.Required(CONF_CONNECTION_MODE, default=mode): vol.In(
+                {MODE_LOCAL: "Home Assistant direct", MODE_RELAY: "V4 relay"}
+            ),
+        }
+    )
+
+
+def _details_schema(mode: str, defaults: Mapping[str, Any]) -> vol.Schema:
+    """Show only settings used by the selected transport."""
+    if mode == MODE_LOCAL:
+        endpoint_field = {
+            vol.Required(CONF_HA_URL, default=defaults.get(CONF_HA_URL, "")): cv.string
+        }
+    else:
+        endpoint_field = {
             vol.Required(
                 CONF_URL, default=defaults.get(CONF_URL, DEFAULT_WS_URL)
-            ): cv.string,
+            ): cv.string
+        }
+    relay_fields = (
+        {
             vol.Required(
                 CONF_CONNECT_TIMEOUT,
                 default=defaults.get(CONF_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
             vol.Required(
-                CONF_RESPONSE_TIMEOUT,
-                default=defaults.get(CONF_RESPONSE_TIMEOUT, DEFAULT_RESPONSE_TIMEOUT),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
-            vol.Required(
                 CONF_RECONNECT_DELAY,
                 default=defaults.get(CONF_RECONNECT_DELAY, DEFAULT_RECONNECT_DELAY),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
+            vol.Required(
+                CONF_AUTO_RECONNECT,
+                default=defaults.get(CONF_AUTO_RECONNECT, DEFAULT_AUTO_RECONNECT),
+            ): cv.boolean,
+        }
+        if mode == MODE_RELAY
+        else {}
+    )
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME)
+            ): cv.string,
+            **endpoint_field,
+            vol.Required(
+                CONF_RESPONSE_TIMEOUT,
+                default=defaults.get(CONF_RESPONSE_TIMEOUT, DEFAULT_RESPONSE_TIMEOUT),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
             vol.Required(
                 CONF_COMMAND_STEP,
                 default=defaults.get(CONF_COMMAND_STEP, DEFAULT_COMMAND_STEP),
@@ -115,10 +138,7 @@ def _schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
                 CONF_MAX_INTENSITY,
                 default=defaults.get(CONF_MAX_INTENSITY, DEFAULT_MAX_INTENSITY),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
-            vol.Required(
-                CONF_AUTO_RECONNECT,
-                default=defaults.get(CONF_AUTO_RECONNECT, DEFAULT_AUTO_RECONNECT),
-            ): cv.boolean,
+            **relay_fields,
         }
     )
 
@@ -131,6 +151,7 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._default_ha_url: str = ""
+        self._mode = MODE_LOCAL
 
     @staticmethod
     @callback
@@ -144,15 +165,9 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
-            errors = _validate_input(user_input)
-            if not errors:
-                return self.async_create_entry(
-                    title=user_input[CONF_NAME],
-                    data=user_input,
-                )
+            self._mode = user_input[CONF_CONNECTION_MODE]
+            return await self.async_step_details()
 
         if not self._default_ha_url:
             self._default_ha_url = (
@@ -160,9 +175,26 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         return self.async_show_form(
             step_id="user",
-            data_schema=_schema(
-                {CONF_HA_URL: self._default_ha_url, **(user_input or {})}
-            ),
+            data_schema=_mode_schema(self._mode),
+        )
+
+    async def async_step_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the selected connection mode."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_input(user_input, self._mode)
+            if not errors:
+                return self.async_create_entry(
+                    title=user_input[CONF_NAME],
+                    data={CONF_CONNECTION_MODE: self._mode, **user_input},
+                )
+
+        defaults = {CONF_HA_URL: self._default_ha_url, **(user_input or {})}
+        return self.async_show_form(
+            step_id="details",
+            data_schema=_details_schema(self._mode, defaults),
             errors=errors,
         )
 
@@ -173,41 +205,62 @@ class DGLabOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow."""
         self._config_entry = config_entry
+        self._mode = config_entry.options.get(
+            CONF_CONNECTION_MODE,
+            config_entry.data.get(CONF_CONNECTION_MODE, MODE_RELAY),
+        )
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage integration options."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
-            errors = _validate_input(user_input)
-            if not errors:
-                return self.async_create_entry(data=user_input)
+            self._mode = user_input[CONF_CONNECTION_MODE]
+            return await self.async_step_details()
 
-        defaults = {
-            CONF_CONNECTION_MODE: MODE_RELAY,
-            **self._config_entry.data,
-            **self._config_entry.options,
-        }
         return self.async_show_form(
             step_id="init",
-            data_schema=_schema(defaults),
+            data_schema=_mode_schema(self._mode),
+        )
+
+    async def async_step_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure options for the selected connection mode."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_input(user_input, self._mode)
+            if not errors:
+                return self.async_create_entry(
+                    data={CONF_CONNECTION_MODE: self._mode, **user_input}
+                )
+
+        defaults = {
+            CONF_HA_URL: self.hass.config.internal_url
+            or self.hass.config.external_url
+            or "",
+            **self._config_entry.data,
+            **self._config_entry.options,
+            **(user_input or {}),
+        }
+        return self.async_show_form(
+            step_id="details",
+            data_schema=_details_schema(self._mode, defaults),
             errors=errors,
         )
 
 
-def _validate_input(user_input: dict[str, Any]) -> dict[str, str]:
+def _validate_input(user_input: dict[str, Any], mode: str) -> dict[str, str]:
     """Validate fields used by the selected connection mode."""
     errors: dict[str, str] = {}
-    if user_input[CONF_CONNECTION_MODE] == MODE_LOCAL:
+    if mode == MODE_LOCAL:
         try:
             user_input[CONF_HA_URL] = _validate_ha_url(user_input.get(CONF_HA_URL, ""))
         except vol.Invalid:
             errors[CONF_HA_URL] = "invalid_home_assistant_url"
     else:
         try:
-            user_input[CONF_URL] = _validate_websocket_url(user_input[CONF_URL])
+            user_input[CONF_URL] = _validate_websocket_url(user_input.get(CONF_URL, ""))
         except vol.Invalid:
             errors[CONF_URL] = "invalid_websocket_url"
     return errors

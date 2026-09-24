@@ -37,6 +37,8 @@ ws://192.168.1.10:8123/api/dg_lab/v4/<entry-id>?tid=<pairing-id>
 
 For a remote HA address using HTTPS, the app URL uses `wss://`. The HA HTTP server or reverse proxy must allow WebSocket upgrades. The pairing ID is a secret access token for this unauthenticated endpoint; treat the generated app URL as private and use HTTPS when crossing an untrusted network.
 
+The QR code uses DG-LAB's `https://dungeon-lab.cn/s/` pairing link format. That website address is only the app handoff; its `url=` parameter contains your Home Assistant `ws://` or `wss://` endpoint in direct mode. The app connects to that endpoint, not to the default relay. Check the `app_websocket_url` attribute on the `Pairing ID` sensor to see the exact destination.
+
 If you already configured relay mode, open the DG-LAB integration's options and select `Home Assistant direct`. Enter your Home Assistant base URL there, then scan the `Pairing QR code` image entity with the DG-LAB app. The `Pairing ID` sensor also exposes the `app_websocket_url` and `pairing_url` attributes.
 
 Relay mode defaults to:
