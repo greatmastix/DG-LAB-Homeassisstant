@@ -53,7 +53,7 @@ def _schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
             ): cv.string,
             vol.Required(
                 CONF_URL, default=defaults.get(CONF_URL, DEFAULT_WS_URL)
-            ): _validate_websocket_url,
+            ): cv.string,
             vol.Required(
                 CONF_CONNECT_TIMEOUT,
                 default=defaults.get(CONF_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT),
