@@ -120,7 +120,7 @@ class DGLabPairingSensor(DGLabHubEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return pairing details."""
         return {
-            "websocket_url": self.client.url,
+            "websocket_url": self.client.websocket_url,
             "app_websocket_url": self.client.app_websocket_url,
             "pairing_url": self.client.pairing_url,
         }

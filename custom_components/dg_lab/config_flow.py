@@ -17,7 +17,9 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
+    CONF_CONNECTION_MODE,
     CONF_CONNECT_TIMEOUT,
+    CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
     CONF_RESPONSE_TIMEOUT,
@@ -31,15 +33,49 @@ from .const import (
     DEFAULT_RESPONSE_TIMEOUT,
     DEFAULT_WS_URL,
     DOMAIN,
+    MODE_LOCAL,
+    MODE_RELAY,
 )
 
 
 def _validate_websocket_url(value: str) -> str:
     """Validate a ws/wss URL."""
     value = value.strip()
-    parsed = urlparse(value)
-    if parsed.scheme not in {"ws", "wss"} or not parsed.netloc:
+    try:
+        parsed = urlparse(value)
+        valid = (
+            parsed.scheme in {"ws", "wss"}
+            and parsed.hostname
+            and parsed.port != 0
+        )
+    except ValueError:
+        valid = False
+    if not valid:
         raise vol.Invalid("websocket_url")
+    return value
+
+
+def _validate_ha_url(value: str) -> str:
+    """Validate a Home Assistant base URL reachable by the app."""
+    value = value.strip().rstrip("/")
+    try:
+        parsed = urlparse(value)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and parsed.port != 0
+        )
+    except ValueError:
+        valid = False
+    if (
+        not valid
+        or parsed.username
+        or parsed.password
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise vol.Invalid("home_assistant_url")
     return value
 
 
@@ -51,6 +87,11 @@ def _schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
             vol.Required(
                 CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME)
             ): cv.string,
+            vol.Required(
+                CONF_CONNECTION_MODE,
+                default=defaults.get(CONF_CONNECTION_MODE, MODE_LOCAL),
+            ): vol.In({MODE_LOCAL: "Home Assistant direct", MODE_RELAY: "V4 relay"}),
+            vol.Optional(CONF_HA_URL, default=defaults.get(CONF_HA_URL, "")): cv.string,
             vol.Required(
                 CONF_URL, default=defaults.get(CONF_URL, DEFAULT_WS_URL)
             ): cv.string,
@@ -87,6 +128,10 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        self._default_ha_url: str = ""
+
     @staticmethod
     @callback
     def async_get_options_flow(
@@ -102,19 +147,22 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                user_input[CONF_URL] = _validate_websocket_url(user_input[CONF_URL])
-            except vol.Invalid:
-                errors[CONF_URL] = "invalid_websocket_url"
-            else:
+            errors = _validate_input(user_input)
+            if not errors:
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
                     data=user_input,
                 )
 
+        if not self._default_ha_url:
+            self._default_ha_url = (
+                self.hass.config.internal_url or self.hass.config.external_url or ""
+            )
         return self.async_show_form(
             step_id="user",
-            data_schema=_schema(user_input),
+            data_schema=_schema(
+                {CONF_HA_URL: self._default_ha_url, **(user_input or {})}
+            ),
             errors=errors,
         )
 
@@ -133,16 +181,33 @@ class DGLabOptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                user_input[CONF_URL] = _validate_websocket_url(user_input[CONF_URL])
-            except vol.Invalid:
-                errors[CONF_URL] = "invalid_websocket_url"
-            else:
+            errors = _validate_input(user_input)
+            if not errors:
                 return self.async_create_entry(data=user_input)
 
-        defaults = {**self._config_entry.data, **self._config_entry.options}
+        defaults = {
+            CONF_CONNECTION_MODE: MODE_RELAY,
+            **self._config_entry.data,
+            **self._config_entry.options,
+        }
         return self.async_show_form(
             step_id="init",
             data_schema=_schema(defaults),
             errors=errors,
         )
+
+
+def _validate_input(user_input: dict[str, Any]) -> dict[str, str]:
+    """Validate fields used by the selected connection mode."""
+    errors: dict[str, str] = {}
+    if user_input[CONF_CONNECTION_MODE] == MODE_LOCAL:
+        try:
+            user_input[CONF_HA_URL] = _validate_ha_url(user_input.get(CONF_HA_URL, ""))
+        except vol.Invalid:
+            errors[CONF_HA_URL] = "invalid_home_assistant_url"
+    else:
+        try:
+            user_input[CONF_URL] = _validate_websocket_url(user_input[CONF_URL])
+        except vol.Invalid:
+            errors[CONF_URL] = "invalid_websocket_url"
+    return errors

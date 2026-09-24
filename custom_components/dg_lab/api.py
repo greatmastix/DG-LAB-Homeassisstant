@@ -8,10 +8,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import logging
+import secrets
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
-from aiohttp import ClientError, ClientWebSocketResponse, WSMsgType
+from aiohttp import ClientError, ClientWebSocketResponse, WSMsgType, web
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
@@ -28,7 +29,9 @@ from .const import (
     CHANNELS,
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
+    CONF_CONNECTION_MODE,
     CONF_CONNECT_TIMEOUT,
+    CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
     CONF_RESPONSE_TIMEOUT,
@@ -46,6 +49,9 @@ from .const import (
     EVENT_CUSTOM_ACTION,
     EVENT_DEVICE_DISCOVERED,
     EVENT_ERROR,
+    LOCAL_WS_PATH,
+    MODE_LOCAL,
+    MODE_RELAY,
     PAIRING_PAGE_URL,
     SET_INTENSITY,
     SET_TEMP_INTENSITY,
@@ -238,6 +244,8 @@ class DGLabClient:
         self.entry = entry
         self.name: str = entry_value(entry, CONF_NAME, entry.title)
         self.url: str = entry_value(entry, CONF_URL, DEFAULT_WS_URL)
+        self.mode: str = entry_value(entry, CONF_CONNECTION_MODE, MODE_RELAY)
+        self.ha_url: str = entry_value(entry, CONF_HA_URL, "")
         self.connect_timeout: int = entry_value(
             entry, CONF_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT
         )
@@ -273,13 +281,16 @@ class DGLabClient:
         self._ping_task: asyncio.Task[None] | None = None
         self._closing = False
         self._ws: ClientWebSocketResponse | None = None
+        self._local_peers: dict[str, web.WebSocketResponse] = {}
         self._missed_server_pongs = 0
         self._request_id_counter = 0
         self._pending: dict[tuple[str, str], asyncio.Future[Any]] = {}
 
     @property
     def connected(self) -> bool:
-        """Return whether the relay websocket is connected."""
+        """Return whether the selected V4 transport is ready."""
+        if self.mode == MODE_LOCAL:
+            return bool(self.target_id and not self._closing)
         return (
             self._ws is not None and not self._ws.closed and self.target_id is not None
         )
@@ -292,13 +303,26 @@ class DGLabClient:
     @property
     def app_websocket_url(self) -> str | None:
         """Return the app-facing websocket URL containing the current target ID."""
-        if not self.target_id:
+        websocket_url = self.websocket_url
+        if not self.target_id or not websocket_url:
             return None
 
-        parsed = urlparse(self.url)
+        parsed = urlparse(websocket_url)
         query = dict(parse_qsl(parsed.query, keep_blank_values=True))
         query["tid"] = self.target_id
         return urlunparse(parsed._replace(query=urlencode(query)))
+
+    @property
+    def websocket_url(self) -> str | None:
+        """Return the V4 endpoint used by the app."""
+        if self.mode == MODE_RELAY:
+            return self.url
+        if not self.ha_url:
+            return None
+        parsed = urlparse(self.ha_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        path = LOCAL_WS_PATH.format(entry_id=self.entry.entry_id)
+        return urlunparse(parsed._replace(scheme=scheme, path=path))
 
     @property
     def pairing_url(self) -> str | None:
@@ -367,6 +391,13 @@ class DGLabClient:
 
     async def async_start(self) -> None:
         """Start the websocket client."""
+        if self.mode == MODE_LOCAL:
+            self._closing = False
+            self.target_id = secrets.token_urlsafe(24)
+            self.last_error = None
+            self._set_state(SOCKET_WAITING_FOR_PEER)
+            self._notify()
+            return
         if self._runner_task and not self._runner_task.done():
             return
         self._closing = False
@@ -378,6 +409,17 @@ class DGLabClient:
         """Stop the websocket client."""
         self._closing = True
         self._stop_server_ping()
+
+        for peer in list(self._local_peers.values()):
+            if not peer.closed:
+                try:
+                    await peer.send_json(
+                        {"type": "controller_disconnected", "clientId": self.target_id}
+                    )
+                except ConnectionResetError:
+                    pass
+                await peer.close(code=4000, message=b"controller_disconnected")
+        self._local_peers.clear()
 
         if self._ws and not self._ws.closed:
             await self._ws.close(code=1000, message=b"shutdown")
@@ -395,6 +437,10 @@ class DGLabClient:
 
     async def async_reconnect(self) -> None:
         """Reconnect the websocket."""
+        if self.mode == MODE_LOCAL:
+            await self.async_stop()
+            await self.async_start()
+            return
         if self._ws and not self._ws.closed:
             await self._ws.close(code=1000, message=b"reconnect")
         if not self._runner_task or self._runner_task.done():
@@ -777,6 +823,16 @@ class DGLabClient:
 
     async def _send_frame(self, frame: dict[str, Any]) -> None:
         """Send a raw protocol frame."""
+        if self.mode == MODE_LOCAL:
+            client_id = frame.get("clientId")
+            peer = self._local_peers.get(client_id)
+            if frame.get("type") != "message" or peer is None or peer.closed:
+                raise DGLabNotConnectedError("DG-LAB app is not connected")
+            try:
+                await peer.send_json({"type": "message", "data": frame.get("data")})
+            except ConnectionResetError as err:
+                raise DGLabNotConnectedError("DG-LAB app disconnected") from err
+            return
         ws = self._ws
         if ws is None or ws.closed:
             raise DGLabNotConnectedError("DG-LAB websocket is not connected")
@@ -789,6 +845,56 @@ class DGLabClient:
                 MESSAGE_SIZE_WARNING,
             )
         await ws.send_str(payload)
+
+    async def async_attach_local_peer(self, peer: web.WebSocketResponse) -> str:
+        """Attach an app to the Home Assistant hosted V4 endpoint."""
+        client_id = secrets.token_hex(4)
+        while client_id in self._local_peers:
+            client_id = secrets.token_hex(4)
+        try:
+            await peer.send_json({"type": "hello", "clientId": client_id})
+            await peer.send_json(
+                {"type": "controller_attached", "clientId": self.target_id}
+            )
+            self._local_peers[client_id] = peer
+            await self._handle_text(
+                json.dumps({"type": "client_attached", "clientId": client_id})
+            )
+        except Exception:
+            self._local_peers.pop(client_id, None)
+            raise
+        return client_id
+
+    async def async_receive_local_peer(self, client_id: str, raw: str) -> None:
+        """Process an app frame through the normal controller message handler."""
+        try:
+            frame = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(frame, dict):
+            return
+        peer = self._local_peers.get(client_id)
+        if peer is None or peer.closed:
+            return
+        if frame.get("type") == "ping":
+            await peer.send_json(
+                {"type": "pong", "ts": int(dt_util.utcnow().timestamp() * 1000)}
+            )
+        elif frame.get("type") == "message":
+            await self._handle_message_frame(
+                {"type": "message", "clientId": client_id, "data": frame.get("data")}
+            )
+
+    async def async_detach_local_peer(
+        self, client_id: str, peer: web.WebSocketResponse
+    ) -> None:
+        """Remove an app connection and update discovered entity availability."""
+        if self._local_peers.get(client_id) is not peer:
+            return
+        self._local_peers.pop(client_id)
+        await self._handle_text(
+            json.dumps({"type": "client_disconnected", "clientId": client_id})
+        )
 
     def _next_request_id(self) -> str:
         """Return the next RPC request ID."""

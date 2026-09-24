@@ -9,6 +9,12 @@ MANUFACTURER = "DG-LAB"
 DEFAULT_NAME = "DG-LAB WebSocket"
 DEFAULT_WS_URL = "wss://trex.dungeon-lab.cn/v4"
 PAIRING_PAGE_URL = "https://dungeon-lab.cn/s/"
+LOCAL_WS_PATH = "/api/dg_lab/v4/{entry_id}"
+
+CONF_CONNECTION_MODE = "connection_mode"
+CONF_HA_URL = "ha_url"
+MODE_LOCAL = "local"
+MODE_RELAY = "relay"
 
 CONF_AUTO_RECONNECT = "auto_reconnect"
 CONF_COMMAND_STEP = "command_step"
@@ -28,6 +34,7 @@ DEFAULT_RESPONSE_TIMEOUT = 8
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.IMAGE,
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.TEXT,

@@ -40,6 +40,7 @@ from .const import (
     SERVICE_SET_INTENSITY,
     SERVICE_SET_TEMP_INTENSITY,
 )
+from .websocket import DGLabWebSocketView
 
 _CHANNEL_SCHEMA = vol.Any(
     vol.In(["A", "a", "B", "b", "0", "1"]),
@@ -68,6 +69,7 @@ _CHANNEL_COMMAND_SCHEMA = {
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up global DG-LAB services."""
     hass.data.setdefault(DOMAIN, {})
+    hass.http.register_view(DGLabWebSocketView(hass))
 
     async def handle_reconnect(call: ServiceCall) -> None:
         for client in _clients_from_call(hass, call):

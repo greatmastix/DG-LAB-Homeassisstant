@@ -2,12 +2,12 @@
 
 Custom Home Assistant integration for DG-LAB V4 websocket control.
 
-Home Assistant acts as the websocket controller. The DG-LAB app pairs to the generated URL, then apps, slots, device fields, and controls are discovered dynamically from V4 `devices.snapshot`, `devices.patch`, and `slots.patch` messages.
+Home Assistant can accept the DG-LAB app directly over its own WebSocket endpoint or connect through a V4 relay. The app pairs to the generated URL, then apps, slots, device fields, and controls are discovered dynamically from V4 `devices.snapshot`, `devices.patch`, and `slots.patch` messages.
 
 ## Features
 
-- UI config flow with configurable websocket relay URL.
-- V4 websocket pairing URL sensor for the DG-LAB app.
+- UI config flow with Home Assistant direct and V4 relay connection modes.
+- Pairing QR code image and V4 websocket pairing URL sensor for the DG-LAB app.
 - Automatic app and device discovery after pairing.
 - Dynamic sensors for every primitive field reported in `props` and `slotState`.
 - Raw diagnostic device sensor with the full `props` and `slot_state` payloads.
@@ -29,7 +29,17 @@ Then add the integration from:
 
 `Settings` -> `Devices & services` -> `Add integration` -> `DG-LAB`
 
-The default relay is:
+For Home Assistant direct mode, enter an HA URL reachable from the DG-LAB app, such as `http://192.168.1.10:8123`. The integration generates an app URL like:
+
+```text
+ws://192.168.1.10:8123/api/dg_lab/v4/<entry-id>?tid=<pairing-id>
+```
+
+For a remote HA address using HTTPS, the app URL uses `wss://`. The HA HTTP server or reverse proxy must allow WebSocket upgrades. The pairing ID is a secret access token for this unauthenticated endpoint; treat the generated app URL as private and use HTTPS when crossing an untrusted network.
+
+If you already configured relay mode, open the DG-LAB integration's options and select `Home Assistant direct`. Enter your Home Assistant base URL there, then scan the `Pairing QR code` image entity with the DG-LAB app. The `Pairing ID` sensor also exposes the `app_websocket_url` and `pairing_url` attributes.
+
+Relay mode defaults to:
 
 ```text
 wss://trex.dungeon-lab.cn/v4
@@ -39,9 +49,9 @@ You can also point the integration at a self-hosted V4 websocket relay.
 
 ## Pairing
 
-After setup, open the `Pairing ID` sensor attributes and use the `pairing_url` value with the DG-LAB app. When the app connects, Home Assistant will create app/device entities automatically.
+After setup, open the `Pairing QR code` image entity and scan it with the DG-LAB app. When the app connects, Home Assistant will create app/device entities automatically. You can also use the `pairing_url` attribute of the `Pairing ID` sensor.
 
-The pairing ID changes after reconnects because it is assigned by the relay.
+The pairing ID and QR code change after reconnects. In direct mode Home Assistant generates the ID; in relay mode the relay assigns it.
 
 ## Services
 

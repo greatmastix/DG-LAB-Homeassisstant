@@ -3,11 +3,13 @@
     "step": {
       "user": {
         "title": "DG-LAB WebSocket",
-        "description": "Create a controller connection. After setup, use the pairing URL sensor to connect the DG-LAB app.",
+        "description": "Choose how the DG-LAB app connects. For Home Assistant direct, enter the Home Assistant address reachable from the app.",
         "data": {
           "name": "Name",
-          "url": "WebSocket relay URL",
-          "connect_timeout": "Connect timeout",
+          "connection_mode": "Connection mode",
+          "ha_url": "Home Assistant URL (direct mode)",
+          "url": "WebSocket relay URL (relay mode)",
+          "connect_timeout": "Relay connect timeout",
           "response_timeout": "Response timeout",
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
@@ -17,7 +19,8 @@
       }
     },
     "error": {
-      "invalid_websocket_url": "Enter a valid ws:// or wss:// URL."
+      "invalid_websocket_url": "Enter a valid ws:// or wss:// URL.",
+      "invalid_home_assistant_url": "Enter a reachable Home Assistant URL starting with http:// or https://."
     }
   },
   "options": {
@@ -26,8 +29,10 @@
         "title": "DG-LAB WebSocket options",
         "data": {
           "name": "Name",
-          "url": "WebSocket relay URL",
-          "connect_timeout": "Connect timeout",
+          "connection_mode": "Connection mode",
+          "ha_url": "Home Assistant URL (direct mode)",
+          "url": "WebSocket relay URL (relay mode)",
+          "connect_timeout": "Relay connect timeout",
           "response_timeout": "Response timeout",
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
@@ -37,7 +42,8 @@
       }
     },
     "error": {
-      "invalid_websocket_url": "Enter a valid ws:// or wss:// URL."
+      "invalid_websocket_url": "Enter a valid ws:// or wss:// URL.",
+      "invalid_home_assistant_url": "Enter a reachable Home Assistant URL starting with http:// or https://."
     }
   }
 }

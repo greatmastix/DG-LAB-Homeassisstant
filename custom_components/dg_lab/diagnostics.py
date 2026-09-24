@@ -15,6 +15,7 @@ TO_REDACT = {
     "app_websocket_url",
     "pairing_url",
     "target_id",
+    "ha_url",
 }
 
 
@@ -34,6 +35,7 @@ async def async_get_config_entry_diagnostics(
         data["runtime"] = {
             "state": client.state,
             "connected": client.connected,
+            "mode": client.mode,
             "target_id": client.target_id,
             "app_websocket_url": client.app_websocket_url,
             "pairing_url": client.pairing_url,
