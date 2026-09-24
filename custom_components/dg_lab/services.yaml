@@ -1,0 +1,298 @@
+reconnect:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+request_devices:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: false
+ping:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+add_intensity:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: true
+    slot_id:
+      selector:
+        text:
+      required: true
+    channel:
+      selector:
+        select:
+          options:
+            - A
+            - B
+      required: true
+    value:
+      selector:
+        number:
+          min: -1000
+          max: 1000
+          step: 1
+          mode: box
+      required: true
+    priority:
+      selector:
+        select:
+          options:
+            - "0"
+            - "1"
+            - "2"
+      required: false
+    immediate:
+      selector:
+        boolean:
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+set_intensity:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: true
+    slot_id:
+      selector:
+        text:
+      required: true
+    channel:
+      selector:
+        select:
+          options:
+            - A
+            - B
+      required: true
+    value:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 1
+          mode: box
+      required: true
+    priority:
+      selector:
+        select:
+          options:
+            - "0"
+            - "1"
+            - "2"
+      required: false
+    immediate:
+      selector:
+        boolean:
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+set_temp_intensity:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: true
+    slot_id:
+      selector:
+        text:
+      required: true
+    channel:
+      selector:
+        select:
+          options:
+            - A
+            - B
+      required: true
+    value:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 1
+          mode: box
+      required: true
+    duration_ms:
+      selector:
+        number:
+          min: 1
+          max: 86400000
+          step: 100
+          mode: box
+      required: true
+    priority:
+      selector:
+        select:
+          options:
+            - "0"
+            - "1"
+            - "2"
+      required: false
+    immediate:
+      selector:
+        boolean:
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+send_pulse:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: true
+    slot_id:
+      selector:
+        text:
+      required: true
+    channel:
+      selector:
+        select:
+          options:
+            - A
+            - B
+      required: true
+    frames:
+      selector:
+        object:
+      required: true
+    duration_ms:
+      selector:
+        number:
+          min: 1
+          max: 86400000
+          step: 100
+          mode: box
+      required: true
+    priority:
+      selector:
+        select:
+          options:
+            - "0"
+            - "1"
+            - "2"
+      required: false
+    immediate:
+      selector:
+        boolean:
+      required: false
+    version:
+      selector:
+        number:
+          min: 1
+          mode: box
+      required: false
+    seq:
+      selector:
+        number:
+          min: 0
+          mode: box
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+clear_operations:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: false
+    slot_id:
+      selector:
+        text:
+      required: false
+    channel:
+      selector:
+        select:
+          options:
+            - A
+            - B
+      required: false
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false
+send_rpc:
+  fields:
+    config_entry_id:
+      selector:
+        text:
+      required: false
+    client_id:
+      selector:
+        text:
+      required: true
+    payload:
+      selector:
+        object:
+      required: true
+    timeout:
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          mode: box
+      required: false

@@ -1,0 +1,6 @@
+{
+  "name": "DG-LAB",
+  "render_readme": true,
+  "domains": ["binary_sensor", "button", "number", "sensor", "text"],
+  "homeassistant": "2026.1.0"
+}
