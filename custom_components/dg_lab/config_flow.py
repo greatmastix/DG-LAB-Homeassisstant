@@ -93,7 +93,7 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return DGLabOptionsFlowHandler()
+        return DGLabOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -119,8 +119,12 @@ class DGLabConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class DGLabOptionsFlowHandler(config_entries.OptionsFlowWithReload):
+class DGLabOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle DG-LAB options."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize the options flow."""
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -136,7 +140,7 @@ class DGLabOptionsFlowHandler(config_entries.OptionsFlowWithReload):
             else:
                 return self.async_create_entry(data=user_input)
 
-        defaults = {**self.config_entry.data, **self.config_entry.options}
+        defaults = {**self._config_entry.data, **self._config_entry.options}
         return self.async_show_form(
             step_id="init",
             data_schema=_schema(defaults),
