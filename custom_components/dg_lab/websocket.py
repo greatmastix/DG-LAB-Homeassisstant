@@ -6,7 +6,6 @@ import asyncio
 import secrets
 
 from aiohttp import WSMsgType, web
-
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 

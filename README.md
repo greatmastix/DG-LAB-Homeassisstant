@@ -1,63 +1,68 @@
-# DG-LAB Home Assistant Integration
+# DG-LAB for Home Assistant
 
-Custom Home Assistant integration for DG-LAB V4 websocket control.
+A custom Home Assistant integration for pairing with and controlling DG-LAB V4 devices. Connect the DG-LAB app directly to Home Assistant or use a compatible V4 relay.
 
-Home Assistant can accept the DG-LAB app directly over its own WebSocket endpoint or connect through a V4 relay. The app pairs to the generated URL, then apps, slots, device fields, and controls are discovered dynamically from V4 `devices.snapshot`, `devices.patch`, and `slots.patch` messages.
+[![Open your Home Assistant instance and add this repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=greatmastix&repository=DG-LAB-Homeassisstant&category=integration)
 
 ## Features
 
-- UI config flow with Home Assistant direct and V4 relay connection modes.
-- Pairing QR code image and V4 websocket pairing URL sensor for the DG-LAB app.
-- Automatic app and device discovery after pairing.
-- Automatic removal of app/device entities when an app or physical device disconnects.
-- Friendly product names for Coyote, Opossum, and Civet devices.
-- Dynamic sensors for every primitive field reported in `props` and `slotState`.
-- Raw diagnostic device sensor with the full `props` and `slot_state` payloads.
-- Binary sensors for websocket/app/device boolean state.
-- Per-channel controls:
-  - current intensity number
-  - increase/decrease buttons
-  - reset intensity button
-  - clear channel operations button
-  - temporary intensity value/duration plus apply button
-  - pulse frame text input, pulse duration, and send pulse button
-- Services for all V4 control paths: ping, devices.get, add/set/temp intensity, send pulse, clear operations, and raw RPC.
+- Direct, local WebSocket pairing or remote V4 relay mode.
+- Pairing URL and QR code generated inside Home Assistant.
+- Automatic discovery of connected apps and physical devices.
+- Automatic removal of app and device entities after disconnection.
+- Friendly names for Coyote, Opossum, and Civet devices.
+- Sensors for device properties, slot state, and raw diagnostic data.
+- Per-channel intensity, temporary intensity, pulse, reset, and clear controls.
+- Home Assistant actions for every supported V4 control path.
 
-## Install
+## Installation
 
-Copy `custom_components/dg_lab` into your Home Assistant `custom_components` directory and restart Home Assistant.
+### HACS
 
-Then add the integration from:
+1. Select the **Open your Home Assistant** button above.
+2. Download **DG-LAB** from HACS.
+3. Restart Home Assistant.
+4. Go to **Settings → Devices & services → Add integration** and select **DG-LAB**.
 
-`Settings` -> `Devices & services` -> `Add integration` -> `DG-LAB`
+If the button does not open your instance, add this repository manually as a custom **Integration** repository in HACS:
 
-For Home Assistant direct mode, enter an HA URL reachable from the DG-LAB app, such as `http://192.168.1.10:8123`. The integration generates an app URL like:
+```text
+https://github.com/greatmastix/DG-LAB-Homeassisstant
+```
+
+### Manual installation
+
+1. Copy `custom_components/dg_lab` into your Home Assistant `custom_components` directory.
+2. Restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration** and select **DG-LAB**.
+
+## Configuration
+
+Choose one of two connection modes during setup:
+
+- **Home Assistant direct** — recommended for local use. Enter a Home Assistant URL that the DG-LAB app can reach, such as `http://192.168.1.10:8123`.
+- **V4 relay** — connects through `wss://trex.dungeon-lab.cn/v4` by default. A self-hosted compatible relay can be used instead.
+
+In direct mode, the integration generates an app WebSocket URL similar to:
 
 ```text
 ws://192.168.1.10:8123/api/dg_lab/v4/<entry-id>?tid=<pairing-id>
 ```
 
-For a remote HA address using HTTPS, the app URL uses `wss://`. The HA HTTP server or reverse proxy must allow WebSocket upgrades. The pairing ID is a secret access token for this unauthenticated endpoint; treat the generated app URL as private and use HTTPS when crossing an untrusted network.
-
-The QR code uses DG-LAB's `https://dungeon-lab.cn/s/` pairing link format. That website address is only the app handoff; its `url=` parameter contains your Home Assistant `ws://` or `wss://` endpoint in direct mode. The app connects to that endpoint, not to the default relay. Check the `app_websocket_url` attribute on the `Pairing ID` sensor to see the exact destination.
-
-If you already configured relay mode, open the DG-LAB integration's options and select `Home Assistant direct`. Enter your Home Assistant base URL there, then scan the `Pairing QR code` image entity with the DG-LAB app. The `Pairing ID` sensor also exposes the `app_websocket_url` and `pairing_url` attributes.
-
-Relay mode defaults to:
-
-```text
-wss://trex.dungeon-lab.cn/v4
-```
-
-You can also point the integration at a self-hosted V4 websocket relay.
+HTTPS Home Assistant addresses use `wss://`. Your Home Assistant HTTP server or reverse proxy must allow WebSocket upgrades.
 
 ## Pairing
 
-After setup, open the `Pairing QR code` image entity and scan it with the DG-LAB app. When the app connects, Home Assistant will create app/device entities automatically. You can also use the `pairing_url` attribute of the `Pairing ID` sensor.
+Open the **Pairing QR code** image entity and scan it with the DG-LAB app. The integration creates entities when the app and a physical device connect, then removes them when they disconnect.
 
-The pairing ID and QR code change after reconnects. In direct mode Home Assistant generates the ID; in relay mode the relay assigns it.
+The **Pairing ID** sensor also provides these attributes:
 
-## Services
+- `app_websocket_url` — the exact WebSocket destination used by the app.
+- `pairing_url` — the DG-LAB app handoff link encoded in the QR code.
+
+The pairing ID is a secret access token for the unauthenticated WebSocket endpoint. Keep the URL private and use HTTPS when crossing an untrusted network. Pairing details can change after a reconnect.
+
+## Actions
 
 The integration registers these actions under the `dg_lab` domain:
 
@@ -71,15 +76,13 @@ The integration registers these actions under the `dg_lab` domain:
 - `dg_lab.clear_operations`
 - `dg_lab.send_rpc`
 
-For V4 protocol commands, `client_id` identifies the paired app and `slot_id` identifies the app-exposed device. Both are available on the raw device sensor attributes.
+For V4 protocol actions, `client_id` identifies the paired app and `slot_id` identifies its exposed device. Both values are available in the raw device sensor attributes.
 
-## Notes
+## Safety and protocol notes
 
-DG-LAB V4 only supports an absolute intensity set to `0`. Non-zero intensity changes are sent as relative deltas based on the last reported channel intensity.
+- Intensity controls use whole-number steps of `1`.
+- The default maximum-intensity safety limit is `100` and applies to controls and action calls.
+- Opossum reports a native channel-strength range up to `200`; the integration does not rescale those values and will not send above the configured safety limit.
+- V4 only supports setting absolute intensity directly to `0`. Other changes are sent as relative deltas from the last reported channel intensity.
 
-The maximum-intensity option is a safety ceiling for every intensity control and
-service call. It defaults to `100`, even when a device reports a higher hardware
-limit. Intensity controls use whole-number steps of `1`; the Opossum's native
-channel-strength range is not rescaled.
-
-Use automations carefully. The integration exposes live device controls, including intensity and pulse commands.
+Use automations carefully: the integration exposes live intensity and pulse controls.

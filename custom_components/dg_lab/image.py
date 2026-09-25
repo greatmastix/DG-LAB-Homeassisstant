@@ -6,7 +6,6 @@ from collections.abc import Callable
 from io import BytesIO
 
 import segno
-
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback

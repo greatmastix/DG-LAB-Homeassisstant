@@ -1,298 +1,451 @@
 reconnect:
   fields:
     config_entry_id:
-      selector:
-        text:
       required: false
+      selector:
+        config_entry:
+          integration: dg_lab
+
 request_devices:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: false
+        entity:
+          filter:
+            integration: dg_lab
+          multiple: true
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+
 ping:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: false
+        entity:
+          filter:
+            integration: dg_lab
+          multiple: true
     timeout:
+      required: false
       selector:
         number:
           min: 0.1
           max: 86400
+          step: 0.1
+          unit_of_measurement: s
           mode: box
-      required: false
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+
 add_intensity:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: true
-    slot_id:
-      selector:
-        text:
-      required: true
-    channel:
-      selector:
-        select:
-          options:
-            - A
-            - B
-      required: true
+        entity:
+          filter:
+            integration: dg_lab
+            domain: number
+          multiple: true
     value:
+      required: true
       selector:
         number:
-          min: -200
-          max: 200
+          min: -100
+          max: 100
           step: 1
           mode: box
-      required: true
-    priority:
-      selector:
-        select:
-          options:
-            - "0"
-            - "1"
-            - "2"
-      required: false
-    immediate:
-      selector:
-        boolean:
-      required: false
-    timeout:
-      selector:
-        number:
-          min: 0.1
-          max: 86400
-          mode: box
-      required: false
+    operation_options:
+      collapsed: true
+      fields:
+        priority:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Priority 0
+                  value: "0"
+                - label: Priority 1
+                  value: "1"
+                - label: Priority 2
+                  value: "2"
+        immediate:
+          required: false
+          selector:
+            boolean:
+        timeout:
+          required: false
+          selector:
+            number:
+              min: 0.1
+              max: 86400
+              step: 0.1
+              unit_of_measurement: s
+              mode: box
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+        slot_id:
+          required: false
+          selector:
+            text:
+        channel:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Channel A
+                  value: A
+                - label: Channel B
+                  value: B
+
 set_intensity:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: true
-    slot_id:
-      selector:
-        text:
-      required: true
-    channel:
-      selector:
-        select:
-          options:
-            - A
-            - B
-      required: true
+        entity:
+          filter:
+            integration: dg_lab
+            domain: number
+          multiple: true
     value:
+      required: true
       selector:
         number:
           min: 0
-          max: 200
+          max: 100
           step: 1
-          mode: box
-      required: true
-    priority:
-      selector:
-        select:
-          options:
-            - "0"
-            - "1"
-            - "2"
-      required: false
-    immediate:
-      selector:
-        boolean:
-      required: false
-    timeout:
-      selector:
-        number:
-          min: 0.1
-          max: 86400
-          mode: box
-      required: false
+          mode: slider
+    operation_options:
+      collapsed: true
+      fields:
+        priority:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Priority 0
+                  value: "0"
+                - label: Priority 1
+                  value: "1"
+                - label: Priority 2
+                  value: "2"
+        immediate:
+          required: false
+          selector:
+            boolean:
+        timeout:
+          required: false
+          selector:
+            number:
+              min: 0.1
+              max: 86400
+              step: 0.1
+              unit_of_measurement: s
+              mode: box
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+        slot_id:
+          required: false
+          selector:
+            text:
+        channel:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Channel A
+                  value: A
+                - label: Channel B
+                  value: B
+
 set_temp_intensity:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: true
-    slot_id:
-      selector:
-        text:
-      required: true
-    channel:
-      selector:
-        select:
-          options:
-            - A
-            - B
-      required: true
+        entity:
+          filter:
+            integration: dg_lab
+            domain: number
+          multiple: true
     value:
+      required: true
       selector:
         number:
           min: 0
-          max: 200
+          max: 100
           step: 1
-          mode: box
-      required: true
+          mode: slider
     duration_ms:
+      required: true
       selector:
         number:
           min: 1
           max: 86400000
           step: 100
+          unit_of_measurement: ms
           mode: box
-      required: true
-    priority:
-      selector:
-        select:
-          options:
-            - "0"
-            - "1"
-            - "2"
-      required: false
-    immediate:
-      selector:
-        boolean:
-      required: false
-    timeout:
-      selector:
-        number:
-          min: 0.1
-          max: 86400
-          mode: box
-      required: false
+    operation_options:
+      collapsed: true
+      fields:
+        priority:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Priority 0
+                  value: "0"
+                - label: Priority 1
+                  value: "1"
+                - label: Priority 2
+                  value: "2"
+        immediate:
+          required: false
+          selector:
+            boolean:
+        timeout:
+          required: false
+          selector:
+            number:
+              min: 0.1
+              max: 86400
+              step: 0.1
+              unit_of_measurement: s
+              mode: box
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+        slot_id:
+          required: false
+          selector:
+            text:
+        channel:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Channel A
+                  value: A
+                - label: Channel B
+                  value: B
+
 send_pulse:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: true
-    slot_id:
-      selector:
-        text:
-      required: true
-    channel:
-      selector:
-        select:
-          options:
-            - A
-            - B
-      required: true
+        entity:
+          filter:
+            integration: dg_lab
+            domain: number
+          multiple: true
     frames:
+      required: true
       selector:
         object:
-      required: true
     duration_ms:
+      required: true
       selector:
         number:
           min: 1
           max: 86400000
           step: 100
+          unit_of_measurement: ms
           mode: box
-      required: true
-    priority:
-      selector:
-        select:
-          options:
-            - "0"
-            - "1"
-            - "2"
-      required: false
-    immediate:
-      selector:
-        boolean:
-      required: false
-    version:
-      selector:
-        number:
-          min: 1
-          mode: box
-      required: false
-    seq:
-      selector:
-        number:
-          min: 0
-          mode: box
-      required: false
-    timeout:
-      selector:
-        number:
-          min: 0.1
-          max: 86400
-          mode: box
-      required: false
+    operation_options:
+      collapsed: true
+      fields:
+        priority:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Priority 0
+                  value: "0"
+                - label: Priority 1
+                  value: "1"
+                - label: Priority 2
+                  value: "2"
+        immediate:
+          required: false
+          selector:
+            boolean:
+        version:
+          required: false
+          selector:
+            number:
+              min: 1
+              step: 1
+              mode: box
+        seq:
+          required: false
+          selector:
+            number:
+              min: 0
+              step: 1
+              mode: box
+        timeout:
+          required: false
+          selector:
+            number:
+              min: 0.1
+              max: 86400
+              step: 0.1
+              unit_of_measurement: s
+              mode: box
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+        slot_id:
+          required: false
+          selector:
+            text:
+        channel:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Channel A
+                  value: A
+                - label: Channel B
+                  value: B
+
 clear_operations:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: false
-    slot_id:
-      selector:
-        text:
-      required: false
-    channel:
-      selector:
-        select:
-          options:
-            - A
-            - B
-      required: false
+        entity:
+          filter:
+            integration: dg_lab
+          multiple: true
     timeout:
+      required: false
       selector:
         number:
           min: 0.1
           max: 86400
+          step: 0.1
+          unit_of_measurement: s
           mode: box
-      required: false
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
+        slot_id:
+          required: false
+          selector:
+            text:
+        channel:
+          required: false
+          selector:
+            select:
+              options:
+                - label: Channel A
+                  value: A
+                - label: Channel B
+                  value: B
+
 send_rpc:
   fields:
-    config_entry_id:
-      selector:
-        text:
+    entity_id:
       required: false
-    client_id:
       selector:
-        text:
-      required: true
+        entity:
+          filter:
+            integration: dg_lab
+          multiple: true
     payload:
+      required: true
       selector:
         object:
-      required: true
     timeout:
+      required: false
       selector:
         number:
           min: 0.1
           max: 86400
+          step: 0.1
+          unit_of_measurement: s
           mode: box
-      required: false
+    advanced_targeting:
+      collapsed: true
+      fields:
+        config_entry_id:
+          required: false
+          selector:
+            config_entry:
+              integration: dg_lab
+        client_id:
+          required: false
+          selector:
+            text:
