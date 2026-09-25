@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 from aiohttp import ClientSession, WSServerHandshakeError, web
 
@@ -132,7 +132,9 @@ class LocalWebSocketTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await asyncio.wait_for(command, 5), {"ok": True})
 
         await asyncio.sleep(0)
-        self.assertFalse(self.client.apps[client_id].connected)
+        self.assertNotIn(client_id, self.client.apps)
+        self.assertFalse(self.client.devices)
+        self.assertFalse(self.client.channel_settings)
 
         old_url = self.client.app_websocket_url
         await self.client.async_reconnect()

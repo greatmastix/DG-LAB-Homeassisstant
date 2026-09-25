@@ -19,7 +19,7 @@
           "response_timeout": "Response timeout",
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
-          "max_intensity": "Default maximum intensity",
+          "max_intensity": "Maximum intensity safety limit",
           "auto_reconnect": "Reconnect automatically"
         }
       }
@@ -48,7 +48,7 @@
           "response_timeout": "Response timeout",
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
-          "max_intensity": "Default maximum intensity",
+          "max_intensity": "Maximum intensity safety limit",
           "auto_reconnect": "Reconnect automatically"
         }
       }

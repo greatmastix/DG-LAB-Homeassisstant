@@ -5,11 +5,20 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from homeassistant.core import callback
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo, Entity
 
-from .api import DGLabClient, DGLabDevice, channel_name, device_supports_channel
-from .const import DOMAIN, MANUFACTURER
+from .api import (
+    DGLabClient,
+    DGLabDevice,
+    channel_is_available,
+    channel_name,
+    device_is_connected,
+    device_supports_channel,
+)
+from .const import DOMAIN, MANUFACTURER, friendly_device_model
 
 
 class DGLabBaseEntity(Entity):
@@ -88,7 +97,7 @@ class DGLabDeviceEntity(DGLabBaseEntity):
         """Return if the device is currently available."""
         device = self.device
         app = self.client.apps.get(self.client_id)
-        return bool(device and app and app.connected and not device.removed)
+        return bool(device and app and app.connected and device_is_connected(device))
 
 
 class DGLabChannelEntity(DGLabDeviceEntity):
@@ -114,10 +123,7 @@ class DGLabChannelEntity(DGLabDeviceEntity):
         if not super().available:
             return False
         device = self.device
-        if device is None or not device_supports_channel(device, self.channel):
-            return False
-        has_device = device.slot_state.get("hasDevice")
-        return has_device is not False
+        return bool(device and channel_is_available(device, self.channel))
 
 
 def hub_device_info(client: DGLabClient) -> DeviceInfo:
@@ -151,7 +157,11 @@ def device_info(client: DGLabClient, client_id: str, slot_id: str) -> DeviceInfo
         identifiers={(DOMAIN, f"{client.entry.entry_id}_device_{client_id}_{slot_id}")},
         manufacturer=MANUFACTURER,
         name=device.display_name if device else slot_id,
-        model=device.type if device and device.type else "DG-LAB device",
+        model=(
+            friendly_device_model(device.type)
+            if device and device.type
+            else "DG-LAB device"
+        ),
         via_device=(DOMAIN, f"{client.entry.entry_id}_app_{client_id}"),
     )
 
@@ -166,6 +176,30 @@ def iter_device_channels(device: DGLabDevice) -> Iterator[int]:
     for channel in (0, 1):
         if device_supports_channel(device, channel):
             yield channel
+
+
+def iter_connected_devices(client: DGLabClient) -> Iterator[DGLabDevice]:
+    """Yield devices whose app and physical slot are both connected."""
+    for device in client.devices.values():
+        app = client.apps.get(device.client_id)
+        if app and app.connected and device_is_connected(device):
+            yield device
+
+
+@callback
+def remove_stale_entities(
+    hass: HomeAssistant,
+    platform: Platform,
+    seen: dict[tuple[Any, ...], str],
+    current: set[tuple[Any, ...]],
+) -> None:
+    """Remove registry entities that no longer exist in live discovery state."""
+    registry = er.async_get(hass)
+    for key in set(seen).difference(current):
+        unique_id = seen.pop(key)
+        entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+        if entity_id is not None:
+            registry.async_remove(entity_id)
 
 
 def iter_leaf_fields(

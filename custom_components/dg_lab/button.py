@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 
 from .api import DGLabClient, channel_name, normalize_frames
@@ -15,7 +16,9 @@ from .entity import (
     DGLabAppEntity,
     DGLabChannelEntity,
     DGLabHubEntity,
+    iter_connected_devices,
     iter_device_channels,
+    remove_stale_entities,
 )
 
 
@@ -26,16 +29,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up DG-LAB buttons."""
     client: DGLabClient = hass.data[DOMAIN][entry.entry_id]
-    seen: set[tuple[Any, ...]] = set()
+    seen: dict[tuple[Any, ...], str] = {}
 
     @callback
     def discover_entities() -> None:
         entities: list[ButtonEntity] = []
+        current: set[tuple[Any, ...]] = set()
 
         key = ("hub", "reconnect")
+        current.add(key)
         if key not in seen:
-            seen.add(key)
-            entities.append(DGLabReconnectButton(client))
+            entity = DGLabReconnectButton(client)
+            assert entity.unique_id is not None
+            seen[key] = entity.unique_id
+            entities.append(entity)
 
         for client_id in client.apps:
             for cls in (
@@ -44,12 +51,15 @@ async def async_setup_entry(
                 DGLabClearAppButton,
             ):
                 key = ("app", client_id, cls.__name__)
+                current.add(key)
                 if key in seen:
                     continue
-                seen.add(key)
-                entities.append(cls(client, client_id))
+                entity = cls(client, client_id)
+                assert entity.unique_id is not None
+                seen[key] = entity.unique_id
+                entities.append(entity)
 
-        for device in client.devices.values():
+        for device in iter_connected_devices(client):
             for channel in iter_device_channels(device):
                 for cls in (
                     DGLabIncreaseIntensityButton,
@@ -60,13 +70,15 @@ async def async_setup_entry(
                     DGLabSendPulseButton,
                 ):
                     key = (device.client_id, device.slot_id, channel, cls.__name__)
+                    current.add(key)
                     if key in seen:
                         continue
-                    seen.add(key)
-                    entities.append(
-                        cls(client, device.client_id, device.slot_id, channel)
-                    )
+                    entity = cls(client, device.client_id, device.slot_id, channel)
+                    assert entity.unique_id is not None
+                    seen[key] = entity.unique_id
+                    entities.append(entity)
 
+        remove_stale_entities(hass, Platform.BUTTON, seen, current)
         if entities:
             async_add_entities(entities)
 

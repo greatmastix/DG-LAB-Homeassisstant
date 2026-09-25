@@ -6,19 +6,18 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
-    CONF_CONNECTION_MODE,
     CONF_CONNECT_TIMEOUT,
+    CONF_CONNECTION_MODE,
     CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
@@ -137,7 +136,7 @@ def _details_schema(mode: str, defaults: Mapping[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_MAX_INTENSITY,
                 default=defaults.get(CONF_MAX_INTENSITY, DEFAULT_MAX_INTENSITY),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=200)),
             **relay_fields,
         }
     )

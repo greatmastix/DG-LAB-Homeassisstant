@@ -7,12 +7,17 @@ from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
+from homeassistant.const import Platform, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 
 from .api import DGLabClient, channel_name
 from .const import DOMAIN
-from .entity import DGLabChannelEntity, iter_device_channels
+from .entity import (
+    DGLabChannelEntity,
+    iter_connected_devices,
+    iter_device_channels,
+    remove_stale_entities,
+)
 
 
 async def async_setup_entry(
@@ -22,12 +27,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up DG-LAB number entities."""
     client: DGLabClient = hass.data[DOMAIN][entry.entry_id]
-    seen: set[tuple[Any, ...]] = set()
+    seen: dict[tuple[Any, ...], str] = {}
 
     @callback
     def discover_entities() -> None:
         entities: list[NumberEntity] = []
-        for device in client.devices.values():
+        current: set[tuple[Any, ...]] = set()
+        for device in iter_connected_devices(client):
             for channel in iter_device_channels(device):
                 for cls in (
                     DGLabIntensityNumber,
@@ -37,12 +43,14 @@ async def async_setup_entry(
                     DGLabPulseDurationNumber,
                 ):
                     key = (device.client_id, device.slot_id, channel, cls.__name__)
+                    current.add(key)
                     if key in seen:
                         continue
-                    seen.add(key)
-                    entities.append(
-                        cls(client, device.client_id, device.slot_id, channel)
-                    )
+                    entity = cls(client, device.client_id, device.slot_id, channel)
+                    assert entity.unique_id is not None
+                    seen[key] = entity.unique_id
+                    entities.append(entity)
+        remove_stale_entities(hass, Platform.NUMBER, seen, current)
         if entities:
             async_add_entities(entities)
 
@@ -159,7 +167,7 @@ class DGLabStepNumber(DGLabStoredChannelNumber):
 
     def _coerce_setting(self, value: float) -> int:
         """Coerce step to an integer."""
-        return max(1, int(round(value)))
+        return max(1, min(int(self.native_max_value), round(value)))
 
 
 class DGLabTempIntensityNumber(DGLabStoredChannelNumber):
@@ -187,6 +195,10 @@ class DGLabTempIntensityNumber(DGLabStoredChannelNumber):
             else float(self.client.default_max_intensity)
         )
 
+    def _coerce_setting(self, value: float) -> int:
+        """Store a whole-number intensity within the effective channel limit."""
+        return max(0, min(int(self.native_max_value), round(value)))
+
 
 class DGLabTempDurationNumber(DGLabStoredChannelNumber):
     """Set the temporary intensity duration."""
@@ -213,7 +225,7 @@ class DGLabTempDurationNumber(DGLabStoredChannelNumber):
 
     def _coerce_setting(self, value: float) -> int:
         """Coerce seconds to milliseconds."""
-        return max(1, int(round(value * 1000)))
+        return max(1, round(value * 1000))
 
 
 class DGLabPulseDurationNumber(DGLabStoredChannelNumber):
@@ -241,4 +253,4 @@ class DGLabPulseDurationNumber(DGLabStoredChannelNumber):
 
     def _coerce_setting(self, value: float) -> int:
         """Coerce seconds to milliseconds."""
-        return max(1, int(round(value * 1000)))
+        return max(1, round(value * 1000))

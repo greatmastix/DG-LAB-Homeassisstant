@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
+import math
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-import json
-import logging
-import secrets
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from aiohttp import ClientError, ClientWebSocketResponse, WSMsgType, web
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
@@ -29,8 +29,8 @@ from .const import (
     CHANNELS,
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
-    CONF_CONNECTION_MODE,
     CONF_CONNECT_TIMEOUT,
+    CONF_CONNECTION_MODE,
     CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
@@ -44,6 +44,7 @@ from .const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_RESPONSE_TIMEOUT,
     DEFAULT_WS_URL,
+    DEVICE_TYPE_OVC,
     EVENT_CLIENT_ATTACHED,
     EVENT_CLIENT_DISCONNECTED,
     EVENT_CUSTOM_ACTION,
@@ -55,6 +56,7 @@ from .const import (
     PAIRING_PAGE_URL,
     SET_INTENSITY,
     SET_TEMP_INTENSITY,
+    friendly_device_name,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -137,7 +139,7 @@ class DGLabDevice:
     @property
     def display_name(self) -> str:
         """Return a friendly name."""
-        return self.name or self.type or self.slot_id
+        return friendly_device_name(self.type, self.name) or self.type or self.slot_id
 
 
 @dataclass(slots=True)
@@ -195,6 +197,26 @@ def device_supports_channel(device: DGLabDevice, channel: int) -> bool:
     return isinstance(state, dict)
 
 
+def device_is_connected(device: DGLabDevice) -> bool:
+    """Return whether a discovered slot currently has a physical device."""
+    return not device.removed and device.slot_state.get("hasDevice") is not False
+
+
+def channel_is_available(device: DGLabDevice, channel: int) -> bool:
+    """Return whether a device channel is present and ready for control."""
+    if not device_is_connected(device) or not device_supports_channel(device, channel):
+        return False
+
+    # Opossum reports whether an accessory is plugged into each channel. Other
+    # device families use similarly named values for different purposes, so the
+    # check must remain model-specific and boolean-specific.
+    if device.type == DEVICE_TYPE_OVC:
+        status = device.props.get(f"channel{channel_name(channel)}Status")
+        if status is False:
+            return False
+    return True
+
+
 def nested_get(data: dict[str, Any], path: tuple[str, ...]) -> Any:
     """Read a nested dictionary path."""
     current: Any = data
@@ -233,6 +255,19 @@ def normalize_frames(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     raise HomeAssistantError("Pulse frames must be a list, JSON list, or comma-separated text")
+
+
+def normalize_intensity(value: float) -> int:
+    """Validate a whole-number intensity in the protocol's absolute range."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HomeAssistantError("Intensity must be a number")
+    numeric = float(value)
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        raise HomeAssistantError("Intensity must be a whole number")
+    intensity = int(numeric)
+    if not -200 <= intensity <= 200:
+        raise HomeAssistantError("Intensity must be between -200 and 200")
+    return intensity
 
 
 class DGLabClient:
@@ -348,12 +383,16 @@ class DGLabClient:
     def channel_intensity(self, device: DGLabDevice, channel: int) -> float | None:
         """Return the current channel intensity if the app exposes it."""
         value = device.props.get(channel_prop_name(channel))
-        if isinstance(value, (int, float)):
+        if (
+            not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(value)
+        ):
             return float(value)
         return None
 
     def channel_max_intensity(self, device: DGLabDevice, channel: int) -> float:
-        """Return the best known channel maximum intensity."""
+        """Return the effective channel maximum within the configured safety cap."""
         channel_state = device.slot_state.get(channel_state_name(channel))
         candidates: list[Any] = []
         if isinstance(channel_state, dict):
@@ -362,15 +401,19 @@ class DGLabClient:
             if isinstance(comfort, dict):
                 candidates.extend(
                     [
-                        comfort.get("absoluteMax"),
                         comfort.get("comfortMax"),
+                        comfort.get("absoluteMax"),
                     ]
                 )
 
         for candidate in candidates:
-            if isinstance(candidate, (int, float)) and candidate > 0:
-                return float(candidate)
-        return float(self.default_max_intensity)
+            if (
+                not isinstance(candidate, bool)
+                and isinstance(candidate, (int, float))
+                and candidate > 0
+            ):
+                return min(float(candidate), float(self.default_max_intensity), 200.0)
+        return min(float(self.default_max_intensity), 200.0)
 
     @callback
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
@@ -490,7 +533,7 @@ class DGLabClient:
             raise
         except (asyncio.TimeoutError, ClientError, OSError) as err:
             self._record_error("connection_failed", str(err) or err.__class__.__name__)
-        except Exception as err:  # noqa: BLE001 - keep the reconnect loop alive
+        except Exception as err:
             _LOGGER.exception("DG-LAB websocket crashed")
             self._record_error("connection_error", str(err) or err.__class__.__name__)
         finally:
@@ -536,7 +579,7 @@ class DGLabClient:
         if frame_type == "client_disconnected":
             client_id = frame.get("clientId")
             if isinstance(client_id, str):
-                self._set_app_connected(client_id, False)
+                self._remove_app(client_id)
                 self._reject_client_pending(client_id)
                 self._set_state(
                     SOCKET_PAIRED
@@ -616,7 +659,7 @@ class DGLabClient:
             if isinstance(removed, list):
                 for slot_id in removed:
                     if isinstance(slot_id, str):
-                        self._mark_device_removed(client_id, slot_id)
+                        self._remove_device(client_id, slot_id)
             return
 
         if event_type == "slots.patch":
@@ -662,7 +705,7 @@ class DGLabClient:
 
         for app_client_id, slot_id in list(self.devices):
             if app_client_id == client_id and slot_id not in next_slot_ids:
-                self._mark_device_removed(client_id, slot_id)
+                self._remove_device(client_id, slot_id)
 
     def _upsert_device(
         self, client_id: str, payload: dict[str, Any], *, replace: bool
@@ -716,8 +759,12 @@ class DGLabClient:
         slot_id = str(payload["slotId"])
         device = self.devices.get((client_id, slot_id))
         if device is None:
-            device = DGLabDevice(client_id=client_id, slot_id=slot_id)
-            self.devices[(client_id, slot_id)] = device
+            _LOGGER.debug(
+                "Ignoring slot patch for unknown DG-LAB device %s/%s",
+                client_id,
+                slot_id,
+            )
+            return
 
         props = payload.get("props")
         slot_state = payload.get("slotState")
@@ -728,17 +775,26 @@ class DGLabClient:
         device.removed = False
         device.last_seen = dt_util.utcnow()
 
-    def _mark_device_removed(self, client_id: str, slot_id: str) -> None:
-        """Mark a device as removed while keeping entity history available."""
-        device = self.devices.get((client_id, slot_id))
-        if device is None:
-            device = DGLabDevice(client_id=client_id, slot_id=slot_id)
-            self.devices[(client_id, slot_id)] = device
-        device.removed = True
-        device.last_seen = dt_util.utcnow()
+    def _remove_device(self, client_id: str, slot_id: str) -> None:
+        """Forget a device and all transient channel helper state."""
+        self.devices.pop((client_id, slot_id), None)
+        for key in list(self.channel_settings):
+            if key[:2] == (client_id, slot_id):
+                self.channel_settings.pop(key)
+
+    def _remove_app(self, client_id: str) -> None:
+        """Forget an app and every device it exposed."""
+        self.apps.pop(client_id, None)
+        for app_client_id, slot_id in list(self.devices):
+            if app_client_id == client_id:
+                self._remove_device(client_id, slot_id)
+        self._notify()
 
     def _set_app_connected(self, client_id: str, connected: bool) -> None:
         """Set app connection state."""
+        if not connected:
+            self._remove_app(client_id)
+            return
         app = self.apps.get(client_id)
         if app is None:
             app = DGLabApp(client_id=client_id)
@@ -763,12 +819,18 @@ class DGLabClient:
         self._notify()
 
     def _mark_disconnected(self) -> None:
-        """Mark the relay and all apps disconnected."""
+        """Forget disconnected apps and all of their transient inventory."""
+        changed = bool(self.target_id or self.apps or self.devices or self.channel_settings)
         self.target_id = None
-        for app in self.apps.values():
-            app.connected = False
+        self.apps.clear()
+        self.devices.clear()
+        self.channel_settings.clear()
         self._reject_all_pending(DGLabNotConnectedError("DG-LAB websocket disconnected"))
-        self._set_state(SOCKET_DISCONNECTED)
+        if self.state != SOCKET_DISCONNECTED:
+            self.state = SOCKET_DISCONNECTED
+            changed = True
+        if changed:
+            self._notify()
 
     def _record_error(
         self, code: str, message: str, client_id: str | None = None
@@ -1010,7 +1072,7 @@ class DGLabClient:
         client_id: str,
         slot_id: str,
         channel: str | int,
-        value: int | float,
+        value: float,
         *,
         priority: int | None = None,
         immediate: bool | None = None,
@@ -1018,11 +1080,33 @@ class DGLabClient:
     ) -> Any:
         """Add or reduce channel intensity."""
         channel_index = normalize_channel(channel)
+        delta = normalize_intensity(value)
+        device = self.device(client_id, slot_id)
+        if device is None:
+            raise HomeAssistantError(f"Unknown DG-LAB device: {slot_id}")
+
+        current = self.channel_intensity(device, channel_index)
+        if current is None:
+            if delta > 0:
+                raise HomeAssistantError(
+                    "Cannot safely increase intensity until the app reports its current value"
+                )
+        elif delta > 0:
+            remaining = max(
+                0,
+                int(self.channel_max_intensity(device, channel_index) - current),
+            )
+            delta = min(delta, remaining)
+        elif delta < 0:
+            delta = max(delta, -int(current))
+
+        if delta == 0:
+            return {}
         data: dict[str, Any] = {
             "s": slot_id,
             "c": channel_index,
             "t": ADD_INTENSITY,
-            "v": value,
+            "v": delta,
         }
         if priority is not None:
             data["p"] = priority
@@ -1039,7 +1123,7 @@ class DGLabClient:
         client_id: str,
         slot_id: str,
         channel: str | int,
-        value: int | float,
+        value: float,
         *,
         priority: int | None = None,
         immediate: bool | None = None,
@@ -1047,7 +1131,10 @@ class DGLabClient:
     ) -> Any:
         """Set channel intensity using the V4 operations available to controllers."""
         channel_index = normalize_channel(channel)
-        if value <= 0:
+        target = normalize_intensity(value)
+        if target < 0:
+            raise HomeAssistantError("Absolute intensity cannot be negative")
+        if target == 0:
             return await self.reset_intensity(
                 client_id,
                 slot_id,
@@ -1058,12 +1145,19 @@ class DGLabClient:
             )
 
         device = self.device(client_id, slot_id)
+        if device is None:
+            raise HomeAssistantError(f"Unknown DG-LAB device: {slot_id}")
+        maximum = self.channel_max_intensity(device, channel_index)
+        if target > maximum:
+            raise HomeAssistantError(
+                f"Intensity {target} exceeds the configured channel maximum of {maximum:g}"
+            )
         current = self.channel_intensity(device, channel_index) if device else None
         if current is None:
             raise HomeAssistantError(
                 "Cannot set a non-zero absolute intensity until the app reports current intensity"
             )
-        delta = value - current
+        delta = target - current
         if delta == 0:
             return {}
         return await self.add_intensity(
@@ -1109,7 +1203,7 @@ class DGLabClient:
         client_id: str,
         slot_id: str,
         channel: str | int,
-        value: int | float,
+        value: float,
         duration_ms: int,
         *,
         priority: int | None = None,
@@ -1118,11 +1212,22 @@ class DGLabClient:
     ) -> Any:
         """Set a temporary channel intensity."""
         channel_index = normalize_channel(channel)
+        target = normalize_intensity(value)
+        if target < 0:
+            raise HomeAssistantError("Temporary intensity cannot be negative")
+        device = self.device(client_id, slot_id)
+        if device is None:
+            raise HomeAssistantError(f"Unknown DG-LAB device: {slot_id}")
+        maximum = self.channel_max_intensity(device, channel_index)
+        if target > maximum:
+            raise HomeAssistantError(
+                f"Intensity {target} exceeds the configured channel maximum of {maximum:g}"
+            )
         data: dict[str, Any] = {
             "s": slot_id,
             "c": channel_index,
             "t": SET_TEMP_INTENSITY,
-            "v": value,
+            "v": target,
             "d": duration_ms,
         }
         if priority is not None:

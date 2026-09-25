@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import json
+from collections.abc import Iterable
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
-import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 
-from .api import DGLabClient, normalize_frames
+from .api import DGLabClient, device_is_connected, normalize_frames
 from .const import (
     ATTR_CHANNEL,
     ATTR_CLIENT_ID,
@@ -197,7 +197,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             {
                 **_CHANNEL_COMMAND_SCHEMA,
                 vol.Required(ATTR_VALUE): vol.All(
-                    vol.Coerce(float), vol.Range(min=-1000, max=1000)
+                    vol.Coerce(int), vol.Range(min=-200, max=200)
                 ),
             }
         ),
@@ -210,7 +210,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             {
                 **_CHANNEL_COMMAND_SCHEMA,
                 vol.Required(ATTR_VALUE): vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=1000)
+                    vol.Coerce(int), vol.Range(min=0, max=200)
                 ),
             }
         ),
@@ -223,7 +223,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             {
                 **_CHANNEL_COMMAND_SCHEMA,
                 vol.Required(ATTR_VALUE): vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=1000)
+                    vol.Coerce(int), vol.Range(min=0, max=200)
                 ),
                 vol.Required(ATTR_DURATION_MS): vol.All(
                     vol.Coerce(int), vol.Range(min=1, max=86_400_000)
@@ -282,6 +282,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = DGLabClient(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = client
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    entry.async_on_unload(
+        client.async_add_listener(
+            lambda: _reconcile_device_registry(hass, entry, client)
+        )
+    )
+
+    _reconcile_device_registry(hass, entry, client)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await client.async_start()
@@ -301,6 +308,52 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload DG-LAB after its options change."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _reconcile_device_registry(
+    hass: HomeAssistant, entry: ConfigEntry, client: DGLabClient
+) -> None:
+    """Remove app and physical devices that are no longer connected."""
+    connected_client_ids = client.connected_client_ids
+    active_identifiers = {(DOMAIN, entry.entry_id)}
+    active_identifiers.update(
+        (DOMAIN, f"{entry.entry_id}_app_{client_id}")
+        for client_id in connected_client_ids
+    )
+    active_identifiers.update(
+        (
+            DOMAIN,
+            f"{entry.entry_id}_device_{device.client_id}_{device.slot_id}",
+        )
+        for device in client.devices.values()
+        if device.client_id in connected_client_ids and device_is_connected(device)
+    )
+
+    registry = dr.async_get(hass)
+    stale_devices = [
+        device
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+        if device.identifiers.isdisjoint(active_identifiers)
+    ]
+
+    device_prefix = f"{entry.entry_id}_device_"
+    app_prefix = f"{entry.entry_id}_app_"
+
+    def removal_order(device: dr.DeviceEntry) -> int:
+        """Remove physical devices before their app parent devices."""
+        identifiers = {
+            identifier
+            for domain, identifier in device.identifiers
+            if domain == DOMAIN
+        }
+        if any(identifier.startswith(device_prefix) for identifier in identifiers):
+            return 0
+        if any(identifier.startswith(app_prefix) for identifier in identifiers):
+            return 2
+        return 1
+
+    for device in sorted(stale_devices, key=removal_order):
+        registry.async_remove_device(device.id)
 
 
 def _clients_from_call(hass: HomeAssistant, call: ServiceCall) -> Iterable[DGLabClient]:

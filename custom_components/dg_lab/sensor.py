@@ -12,7 +12,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTime
+from homeassistant.const import PERCENTAGE, Platform, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 
@@ -24,8 +24,9 @@ from .entity import (
     DGLabHubEntity,
     field_name,
     field_unique_key,
+    iter_connected_devices,
     iter_leaf_fields,
-    short_id,
+    remove_stale_entities,
 )
 
 MAX_STATE_LENGTH = 255
@@ -38,11 +39,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up DG-LAB sensors."""
     client: DGLabClient = hass.data[DOMAIN][entry.entry_id]
-    seen: set[tuple[Any, ...]] = set()
+    seen: dict[tuple[Any, ...], str] = {}
 
     @callback
     def discover_entities() -> None:
         entities: list[SensorEntity] = []
+        current: set[tuple[Any, ...]] = set()
 
         for cls in (
             DGLabPairingSensor,
@@ -52,24 +54,33 @@ async def async_setup_entry(
             DGLabLastErrorSensor,
         ):
             key = ("hub", cls.__name__)
+            current.add(key)
             if key not in seen:
-                seen.add(key)
-                entities.append(cls(client))
+                entity = cls(client)
+                assert entity.unique_id is not None
+                seen[key] = entity.unique_id
+                entities.append(entity)
 
         for client_id in client.apps:
             for cls in (DGLabAppRttSensor, DGLabAppLastSeenSensor):
                 key = ("app", client_id, cls.__name__)
+                current.add(key)
                 if key not in seen:
-                    seen.add(key)
-                    entities.append(cls(client, client_id))
+                    entity = cls(client, client_id)
+                    assert entity.unique_id is not None
+                    seen[key] = entity.unique_id
+                    entities.append(entity)
 
-        for device in client.devices.values():
+        for device in iter_connected_devices(client):
             raw_key = ("device", device.client_id, device.slot_id, "raw")
+            current.add(raw_key)
             if raw_key not in seen:
-                seen.add(raw_key)
-                entities.append(
-                    DGLabRawDeviceSensor(client, device.client_id, device.slot_id)
+                entity = DGLabRawDeviceSensor(
+                    client, device.client_id, device.slot_id
                 )
+                assert entity.unique_id is not None
+                seen[raw_key] = entity.unique_id
+                entities.append(entity)
 
             for source, source_data in (
                 ("props", device.props),
@@ -81,19 +92,21 @@ async def async_setup_entry(
                     if not isinstance(value, (int, float, str)):
                         continue
                     key = (device.client_id, device.slot_id, source, path)
+                    current.add(key)
                     if key in seen:
                         continue
-                    seen.add(key)
-                    entities.append(
-                        DGLabDeviceFieldSensor(
-                            client,
-                            device.client_id,
-                            device.slot_id,
-                            source,
-                            path,
-                        )
+                    entity = DGLabDeviceFieldSensor(
+                        client,
+                        device.client_id,
+                        device.slot_id,
+                        source,
+                        path,
                     )
+                    assert entity.unique_id is not None
+                    seen[key] = entity.unique_id
+                    entities.append(entity)
 
+        remove_stale_entities(hass, Platform.SENSOR, seen, current)
         if entities:
             async_add_entities(entities)
 

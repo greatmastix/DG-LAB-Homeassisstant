@@ -10,6 +10,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 
 from .api import DGLabClient, nested_get
@@ -20,7 +21,9 @@ from .entity import (
     DGLabHubEntity,
     field_name,
     field_unique_key,
+    iter_connected_devices,
     iter_leaf_fields,
+    remove_stale_entities,
 )
 
 
@@ -31,25 +34,32 @@ async def async_setup_entry(
 ) -> None:
     """Set up DG-LAB binary sensors."""
     client: DGLabClient = hass.data[DOMAIN][entry.entry_id]
-    seen: set[tuple[Any, ...]] = set()
+    seen: dict[tuple[Any, ...], str] = {}
 
     @callback
     def discover_entities() -> None:
         entities: list[BinarySensorEntity] = []
+        current: set[tuple[Any, ...]] = set()
 
         for cls in (DGLabSocketConnectedBinarySensor, DGLabPairedBinarySensor):
             key = ("hub", cls.__name__)
+            current.add(key)
             if key not in seen:
-                seen.add(key)
-                entities.append(cls(client))
+                entity = cls(client)
+                assert entity.unique_id is not None
+                seen[key] = entity.unique_id
+                entities.append(entity)
 
         for client_id in client.apps:
             key = ("app", client_id, "connected")
+            current.add(key)
             if key not in seen:
-                seen.add(key)
-                entities.append(DGLabAppConnectedBinarySensor(client, client_id))
+                entity = DGLabAppConnectedBinarySensor(client, client_id)
+                assert entity.unique_id is not None
+                seen[key] = entity.unique_id
+                entities.append(entity)
 
-        for device in client.devices.values():
+        for device in iter_connected_devices(client):
             for source, source_data in (
                 ("props", device.props),
                 ("slot_state", device.slot_state),
@@ -58,19 +68,21 @@ async def async_setup_entry(
                     if not isinstance(value, bool):
                         continue
                     key = (device.client_id, device.slot_id, source, path)
+                    current.add(key)
                     if key in seen:
                         continue
-                    seen.add(key)
-                    entities.append(
-                        DGLabDeviceBoolBinarySensor(
-                            client,
-                            device.client_id,
-                            device.slot_id,
-                            source,
-                            path,
-                        )
+                    entity = DGLabDeviceBoolBinarySensor(
+                        client,
+                        device.client_id,
+                        device.slot_id,
+                        source,
+                        path,
                     )
+                    assert entity.unique_id is not None
+                    seen[key] = entity.unique_id
+                    entities.append(entity)
 
+        remove_stale_entities(hass, Platform.BINARY_SENSOR, seen, current)
         if entities:
             async_add_entities(entities)
 
@@ -119,11 +131,6 @@ class DGLabAppConnectedBinarySensor(DGLabAppEntity, BinarySensorEntity):
     def __init__(self, client: DGLabClient, client_id: str) -> None:
         """Initialize the binary sensor."""
         super().__init__(client, client_id, "connected")
-
-    @property
-    def available(self) -> bool:
-        """Keep the app connection sensor available after disconnect."""
-        return True
 
     @property
     def is_on(self) -> bool:

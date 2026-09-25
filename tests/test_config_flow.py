@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from homeassistant.const import CONF_NAME

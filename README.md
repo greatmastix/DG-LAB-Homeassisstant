@@ -9,6 +9,8 @@ Home Assistant can accept the DG-LAB app directly over its own WebSocket endpoin
 - UI config flow with Home Assistant direct and V4 relay connection modes.
 - Pairing QR code image and V4 websocket pairing URL sensor for the DG-LAB app.
 - Automatic app and device discovery after pairing.
+- Automatic removal of app/device entities when an app or physical device disconnects.
+- Friendly product names for Coyote, Opossum, and Civet devices.
 - Dynamic sensors for every primitive field reported in `props` and `slotState`.
 - Raw diagnostic device sensor with the full `props` and `slot_state` payloads.
 - Binary sensors for websocket/app/device boolean state.
@@ -74,5 +76,10 @@ For V4 protocol commands, `client_id` identifies the paired app and `slot_id` id
 ## Notes
 
 DG-LAB V4 only supports an absolute intensity set to `0`. Non-zero intensity changes are sent as relative deltas based on the last reported channel intensity.
+
+The maximum-intensity option is a safety ceiling for every intensity control and
+service call. It defaults to `100`, even when a device reports a higher hardware
+limit. Intensity controls use whole-number steps of `1`; the Opossum's native
+channel-strength range is not rescaled.
 
 Use automations carefully. The integration exposes live device controls, including intensity and pulse commands.

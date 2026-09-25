@@ -7,11 +7,17 @@ from typing import Any
 
 from homeassistant.components.text import RestoreText, TextEntity, TextMode
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 
 from .api import DGLabClient, channel_name
 from .const import DOMAIN
-from .entity import DGLabChannelEntity, iter_device_channels
+from .entity import (
+    DGLabChannelEntity,
+    iter_connected_devices,
+    iter_device_channels,
+    remove_stale_entities,
+)
 
 
 async def async_setup_entry(
@@ -21,22 +27,25 @@ async def async_setup_entry(
 ) -> None:
     """Set up DG-LAB text entities."""
     client: DGLabClient = hass.data[DOMAIN][entry.entry_id]
-    seen: set[tuple[Any, ...]] = set()
+    seen: dict[tuple[Any, ...], str] = {}
 
     @callback
     def discover_entities() -> None:
         entities: list[TextEntity] = []
-        for device in client.devices.values():
+        current: set[tuple[Any, ...]] = set()
+        for device in iter_connected_devices(client):
             for channel in iter_device_channels(device):
                 key = (device.client_id, device.slot_id, channel, "pulse_frames")
+                current.add(key)
                 if key in seen:
                     continue
-                seen.add(key)
-                entities.append(
-                    DGLabPulseFramesText(
-                        client, device.client_id, device.slot_id, channel
-                    )
+                entity = DGLabPulseFramesText(
+                    client, device.client_id, device.slot_id, channel
                 )
+                assert entity.unique_id is not None
+                seen[key] = entity.unique_id
+                entities.append(entity)
+        remove_stale_entities(hass, Platform.TEXT, seen, current)
         if entities:
             async_add_entities(entities)
 

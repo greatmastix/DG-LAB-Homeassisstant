@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import unittest
 from io import BytesIO
 from types import SimpleNamespace
-import unittest
 from unittest.mock import Mock, patch
 
-from PIL import Image
 import segno
+from PIL import Image
 
 from custom_components.dg_lab.api import DGLabClient
 from custom_components.dg_lab.const import MODE_LOCAL

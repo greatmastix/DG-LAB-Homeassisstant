@@ -55,8 +55,8 @@ add_intensity:
     value:
       selector:
         number:
-          min: -1000
-          max: 1000
+          min: -200
+          max: 200
           step: 1
           mode: box
       required: true
@@ -104,7 +104,7 @@ set_intensity:
       selector:
         number:
           min: 0
-          max: 1000
+          max: 200
           step: 1
           mode: box
       required: true
@@ -152,7 +152,7 @@ set_temp_intensity:
       selector:
         number:
           min: 0
-          max: 1000
+          max: 200
           step: 1
           mode: box
       required: true
