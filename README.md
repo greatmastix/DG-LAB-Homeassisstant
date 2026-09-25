@@ -2,7 +2,7 @@
 
 A custom Home Assistant integration for pairing with and controlling DG-LAB V4 devices. Connect the DG-LAB app directly to Home Assistant or use a compatible V4 relay.
 
-[![Open your Home Assistant instance and add this repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=greatmastix&repository=DG-LAB-Homeassisstant&category=integration)
+[![Open your Home Assistant instance and add this repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=greatmastix&repository=DG-LAB-Homeassistant&category=integration)
 
 ## Features
 
