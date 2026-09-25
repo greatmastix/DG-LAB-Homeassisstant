@@ -55,6 +55,7 @@ async def async_get_config_entry_diagnostics(
                     "name": device.name,
                     "type": device.type,
                     "removed": device.removed,
+                    "edge_count": device.edge_count,
                     "props": device.props,
                     "slot_state": device.slot_state,
                 }

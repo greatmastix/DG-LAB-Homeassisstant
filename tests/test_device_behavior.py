@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.dg_lab import _reconcile_device_registry
@@ -29,6 +30,7 @@ from custom_components.dg_lab.number import (
     DGLabStepNumber,
     DGLabTempIntensityNumber,
 )
+from custom_components.dg_lab.sensor import DGLabCivetEdgeCountSensor
 
 
 def make_client(*, max_intensity: int = 100) -> DGLabClient:
@@ -230,6 +232,166 @@ class ChannelBehaviorTest(unittest.TestCase):
         device.removed = True
         self.assertFalse(device_is_connected(device))
         self.assertFalse(channel_is_available(device, 0))
+
+
+class CivetEdgeCountTest(unittest.TestCase):
+    """Check derived Civet edge-count behavior."""
+
+    def test_initial_cooldown_snapshot_does_not_invent_an_edge(self) -> None:
+        """Attaching during cooldown starts at zero without a known transition."""
+        for edge_state in (2, 3):
+            with self.subTest(edge_state=edge_state):
+                client = make_client()
+                device = client._upsert_device(
+                    "app",
+                    {
+                        "slotId": "civet",
+                        "type": DEVICE_TYPE_BMTR,
+                        "slotState": {"edge": {"edgeState": edge_state}},
+                    },
+                    replace=True,
+                )
+
+                self.assertEqual(device.edge_count, 0)
+
+    def test_sensor_exposes_the_derived_total(self) -> None:
+        """The Civet entity has a stable ID and total-increasing semantics."""
+        client = make_client()
+        device = client._upsert_device(
+            "app",
+            {
+                "slotId": "civet",
+                "type": DEVICE_TYPE_BMTR,
+                "slotState": {"edge": {"edgeState": 1}},
+            },
+            replace=True,
+        )
+        sensor = DGLabCivetEdgeCountSensor(client, "app", "civet")
+
+        self.assertEqual(sensor.unique_id, "test-entry_app_civet_derived_edge_count")
+        self.assertEqual(sensor.native_value, 0)
+        self.assertEqual(sensor.state_class, SensorStateClass.TOTAL_INCREASING)
+        self.assertEqual(
+            sensor.extra_state_attributes["derived_from"],
+            "slot_state.edge.edgeState",
+        )
+
+        client._patch_slot(
+            "app",
+            {"slotId": "civet", "slotState": {"edge": {"edgeState": 2}}},
+        )
+
+        self.assertEqual(device.edge_count, 1)
+        self.assertEqual(sensor.native_value, 1)
+
+    def test_counts_each_stimulation_to_cooldown_transition_once(self) -> None:
+        """Duplicate and continued cooldown updates do not double-count an edge."""
+        client = make_client()
+        device = client._upsert_device(
+            "app",
+            {
+                "slotId": "civet",
+                "type": DEVICE_TYPE_BMTR,
+                "slotState": {"edge": {"edgeState": 1}},
+            },
+            replace=True,
+        )
+
+        for edge_state, expected_count in (
+            (2, 1),
+            (2, 1),
+            (3, 1),
+            (1, 1),
+            (3, 2),
+            (1, 2),
+            (2, 3),
+        ):
+            with self.subTest(edge_state=edge_state, expected_count=expected_count):
+                client._patch_slot(
+                    "app",
+                    {
+                        "slotId": "civet",
+                        "slotState": {"edge": {"edgeState": edge_state}},
+                    },
+                )
+                self.assertEqual(device.edge_count, expected_count)
+
+    def test_repeated_full_snapshot_does_not_double_count(self) -> None:
+        """A refreshed inventory preserves the counter and transition baseline."""
+        client = make_client()
+        device = client._upsert_device(
+            "app",
+            {
+                "slotId": "civet",
+                "type": DEVICE_TYPE_BMTR,
+                "slotState": {"edge": {"edgeState": 1}},
+            },
+            replace=True,
+        )
+
+        for _ in range(2):
+            refreshed = client._upsert_device(
+                "app",
+                {
+                    "slotId": "civet",
+                    "type": DEVICE_TYPE_BMTR,
+                    "slotState": {"edge": {"edgeState": 2}},
+                },
+                replace=True,
+            )
+            self.assertIs(refreshed, device)
+
+        self.assertEqual(device.edge_count, 1)
+
+    def test_stopped_state_resets_the_session_count(self) -> None:
+        """Stopping edge control resets the count and transition baseline."""
+        client = make_client()
+        device = client._upsert_device(
+            "app",
+            {
+                "slotId": "civet",
+                "type": DEVICE_TYPE_BMTR,
+                "slotState": {"edge": {"edgeState": 1}},
+            },
+            replace=True,
+        )
+        client._patch_slot(
+            "app",
+            {"slotId": "civet", "slotState": {"edge": {"edgeState": 2}}},
+        )
+        self.assertEqual(device.edge_count, 1)
+
+        client._patch_slot(
+            "app",
+            {"slotId": "civet", "slotState": {"edge": {"edgeState": 0}}},
+        )
+        self.assertEqual(device.edge_count, 0)
+
+        client._patch_slot(
+            "app",
+            {"slotId": "civet", "slotState": {"edge": {"edgeState": 2}}},
+        )
+        self.assertEqual(device.edge_count, 0)
+
+    def test_other_device_types_do_not_count_edge_state_transitions(self) -> None:
+        """Only Civet devices interpret the edge state as an edge counter."""
+        client = make_client()
+        device = client._upsert_device(
+            "app",
+            {
+                "slotId": "other",
+                "type": DEVICE_TYPE_COYOTE_030,
+                "slotState": {"edge": {"edgeState": 1}},
+            },
+            replace=True,
+        )
+
+        client._patch_slot(
+            "app",
+            {"slotId": "other", "slotState": {"edge": {"edgeState": 2}}},
+        )
+
+        self.assertEqual(device.edge_count, 0)
 
 
 class IntensityCommandTest(unittest.IsolatedAsyncioTestCase):

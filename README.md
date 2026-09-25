@@ -11,6 +11,7 @@ A custom Home Assistant integration for pairing with and controlling DG-LAB V4 d
 - Automatic discovery of connected apps and physical devices.
 - Automatic removal of app and device entities after disconnection.
 - Friendly names for Coyote, Opossum, and Civet devices.
+- A derived per-session edge count for the Civet edging sensor.
 - Optional two-channel Opossum emulator for hardware-free testing.
 - Sensors for device properties, slot state, and raw diagnostic data.
 - Per-channel intensity, temporary intensity, pulse, reset, and clear controls.

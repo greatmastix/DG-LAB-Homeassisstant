@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 
 from .api import DGLabClient, nested_get
-from .const import DOMAIN
+from .const import DEVICE_TYPE_BMTR, DOMAIN
 from .entity import (
     DGLabAppEntity,
     DGLabDeviceEntity,
@@ -72,6 +72,22 @@ async def async_setup_entry(
                     entities.append(entity)
 
         for device in iter_connected_devices(client):
+            if device.type == DEVICE_TYPE_BMTR:
+                edge_count_key = (
+                    device.client_id,
+                    device.slot_id,
+                    "derived",
+                    "edge_count",
+                )
+                current.add(edge_count_key)
+                if edge_count_key not in seen:
+                    entity = DGLabCivetEdgeCountSensor(
+                        client, device.client_id, device.slot_id
+                    )
+                    assert entity.unique_id is not None
+                    seen[edge_count_key] = entity.unique_id
+                    entities.append(entity)
+
             raw_key = ("device", device.client_id, device.slot_id, "raw")
             current.add(raw_key)
             if raw_key not in seen:
@@ -307,6 +323,35 @@ class DGLabRawDeviceSensor(DGLabDeviceEntity, SensorEntity):
             "removed": device.removed,
             "props": device.props,
             "slot_state": device.slot_state,
+        }
+
+
+class DGLabCivetEdgeCountSensor(DGLabDeviceEntity, SensorEntity):
+    """Expose the edge cycles derived during the current Civet session."""
+
+    _attr_name = "Edge count"
+    _attr_icon = "mdi:counter"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, client: DGLabClient, client_id: str, slot_id: str) -> None:
+        """Initialize the derived edge counter."""
+        super().__init__(client, client_id, slot_id, "derived_edge_count")
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the current session edge count."""
+        device = self.device
+        if device is None or device.type != DEVICE_TYPE_BMTR:
+            return None
+        return device.edge_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Describe how this value is derived."""
+        return {
+            "source": "derived",
+            "derived_from": "slot_state.edge.edgeState",
+            "reset_condition": "edgeState 0",
         }
 
 

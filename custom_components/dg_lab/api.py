@@ -46,6 +46,7 @@ from .const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_RESPONSE_TIMEOUT,
     DEFAULT_WS_URL,
+    DEVICE_TYPE_BMTR,
     DEVICE_TYPE_OVC,
     EVENT_CLIENT_ATTACHED,
     EVENT_CLIENT_DISCONNECTED,
@@ -131,6 +132,8 @@ class DGLabDevice:
     type: str | None = None
     props: dict[str, Any] = field(default_factory=dict)
     slot_state: dict[str, Any] = field(default_factory=dict)
+    edge_count: int = 0
+    last_edge_state: int | None = None
     removed: bool = False
     last_seen: datetime | None = None
 
@@ -228,6 +231,28 @@ def nested_get(data: dict[str, Any], path: tuple[str, ...]) -> Any:
             return None
         current = current[key]
     return current
+
+
+def update_civet_edge_count(device: DGLabDevice) -> None:
+    """Update the derived Civet session edge count from its state machine."""
+    if device.type != DEVICE_TYPE_BMTR:
+        device.edge_count = 0
+        device.last_edge_state = None
+        return
+
+    edge_state = nested_get(device.slot_state, ("edge", "edgeState"))
+    if type(edge_state) is not int or edge_state not in range(5):
+        device.last_edge_state = None
+        return
+
+    if edge_state == 0:
+        device.edge_count = 0
+    elif device.last_edge_state == 1 and edge_state in (2, 3):
+        # State 2 starts forced cooldown. Accept a direct transition to state 3
+        # as well because the app may coalesce adjacent state updates.
+        device.edge_count += 1
+
+    device.last_edge_state = edge_state
 
 
 def merge_patch(current: Any, patch: Any) -> Any:
@@ -765,6 +790,7 @@ class DGLabClient:
         existing.slot_state = (
             dict(slot_state) if replace else merge_patch(existing.slot_state, slot_state)
         )
+        update_civet_edge_count(existing)
         existing.removed = False
         existing.last_seen = now
 
@@ -799,6 +825,7 @@ class DGLabClient:
             device.props = merge_patch(device.props, props)
         if isinstance(slot_state, dict):
             device.slot_state = merge_patch(device.slot_state, slot_state)
+        update_civet_edge_count(device)
         device.removed = False
         device.last_seen = dt_util.utcnow()
 
