@@ -5,11 +5,18 @@ from __future__ import annotations
 import asyncio
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from aiohttp import ClientSession, WSServerHandshakeError, web
 
 from custom_components.dg_lab.api import DGLabClient
-from custom_components.dg_lab.const import DOMAIN, MODE_LOCAL
+from custom_components.dg_lab.const import (
+    CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+    CONF_MAX_APP_CONNECTIONS,
+    CONF_MESSAGES_PER_SECOND,
+    DOMAIN,
+    MODE_LOCAL,
+)
 from custom_components.dg_lab.websocket import DGLabWebSocketView
 
 
@@ -142,3 +149,59 @@ class LocalWebSocketTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(WSServerHandshakeError) as expired:
             await self.session.ws_connect(old_url)
         self.assertEqual(expired.exception.status, 404)
+
+
+class LocalRateLimitTest(unittest.TestCase):
+    """Check direct-mode rolling limits without opening network sockets."""
+
+    def make_client(self, **options: int) -> DGLabClient:
+        """Create a direct-mode client with selected limiter settings."""
+        hass = SimpleNamespace(
+            bus=SimpleNamespace(async_fire=lambda *_args, **_kwargs: None)
+        )
+        entry = SimpleNamespace(
+            entry_id="rate-limit-test",
+            title="DG-LAB",
+            data={"connection_mode": MODE_LOCAL, "ha_url": "https://ha.example"},
+            options=options,
+        )
+        return DGLabClient(hass, entry)
+
+    def test_failed_connection_attempts_use_a_rolling_window(self) -> None:
+        """A source is allowed again after its oldest attempt expires."""
+        client = self.make_client(**{CONF_CONNECTION_ATTEMPTS_PER_MINUTE: 2})
+
+        with patch(
+            "custom_components.dg_lab.api.time.monotonic",
+            side_effect=(0.0, 1.0, 2.0, 60.1),
+        ):
+            self.assertIsNone(client.local_connection_retry_after("192.0.2.1"))
+            self.assertIsNone(client.local_connection_retry_after("192.0.2.1"))
+            self.assertGreater(
+                client.local_connection_retry_after("192.0.2.1") or 0,
+                0,
+            )
+            self.assertIsNone(client.local_connection_retry_after("192.0.2.1"))
+
+    def test_message_limit_and_connection_capacity_are_independent(self) -> None:
+        """Each peer has its own message window and capacity is reserved atomically."""
+        client = self.make_client(
+            **{
+                CONF_MESSAGES_PER_SECOND: 2,
+                CONF_MAX_APP_CONNECTIONS: 1,
+            }
+        )
+
+        with patch(
+            "custom_components.dg_lab.api.time.monotonic",
+            side_effect=(0.0, 0.1, 0.2, 1.1),
+        ):
+            self.assertFalse(client.local_message_rate_limited("app"))
+            self.assertFalse(client.local_message_rate_limited("app"))
+            self.assertTrue(client.local_message_rate_limited("app"))
+            self.assertFalse(client.local_message_rate_limited("app"))
+
+        self.assertTrue(client.try_reserve_local_peer())
+        self.assertFalse(client.try_reserve_local_peer())
+        client.release_local_peer_reservation()
+        self.assertTrue(client.try_reserve_local_peer())

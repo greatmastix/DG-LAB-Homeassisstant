@@ -15,10 +15,16 @@ from custom_components.dg_lab.config_flow import (
     DGLabOptionsFlowHandler,
 )
 from custom_components.dg_lab.const import (
+    CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
     CONF_CONNECTION_MODE,
     CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
+    CONF_MAX_APP_CONNECTIONS,
+    CONF_MESSAGES_PER_SECOND,
     CONF_URL,
+    DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
+    DEFAULT_MAX_APP_CONNECTIONS,
+    DEFAULT_MESSAGES_PER_SECOND,
     MODE_LOCAL,
     MODE_RELAY,
 )
@@ -47,6 +53,12 @@ class ConfigFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(CONF_URL, _field_names(details["data_schema"]))
         self.assertIn(CONF_HA_URL, _field_names(details["data_schema"]))
         self.assertIn(CONF_EMULATED_OPOSSUM, _field_names(details["data_schema"]))
+        self.assertIn(
+            CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+            _field_names(details["data_schema"]),
+        )
+        self.assertIn(CONF_MESSAGES_PER_SECOND, _field_names(details["data_schema"]))
+        self.assertIn(CONF_MAX_APP_CONNECTIONS, _field_names(details["data_schema"]))
 
         submitted = details["data_schema"]({
             CONF_NAME: "Test DG-LAB",
@@ -57,6 +69,16 @@ class ConfigFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(CONF_URL, result["data"])
         self.assertEqual(result["data"][CONF_CONNECTION_MODE], MODE_LOCAL)
         self.assertFalse(result["data"][CONF_EMULATED_OPOSSUM])
+        self.assertEqual(
+            result["data"][CONF_CONNECTION_ATTEMPTS_PER_MINUTE],
+            DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
+        )
+        self.assertEqual(
+            result["data"][CONF_MESSAGES_PER_SECOND], DEFAULT_MESSAGES_PER_SECOND
+        )
+        self.assertEqual(
+            result["data"][CONF_MAX_APP_CONNECTIONS], DEFAULT_MAX_APP_CONNECTIONS
+        )
 
         invalid = await flow.async_step_details(
             {CONF_NAME: "Test DG-LAB", CONF_HA_URL: "not-a-url"}
@@ -125,6 +147,16 @@ class ConfigFlowTest(unittest.IsolatedAsyncioTestCase):
         details = await flow.async_step_user({CONF_CONNECTION_MODE: MODE_RELAY})
         self.assertIn(CONF_URL, _field_names(details["data_schema"]))
         self.assertNotIn(CONF_HA_URL, _field_names(details["data_schema"]))
+        self.assertNotIn(
+            CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+            _field_names(details["data_schema"]),
+        )
+        self.assertNotIn(
+            CONF_MESSAGES_PER_SECOND, _field_names(details["data_schema"])
+        )
+        self.assertNotIn(
+            CONF_MAX_APP_CONNECTIONS, _field_names(details["data_schema"])
+        )
 
 
 def _field_names(schema) -> set[str]:

@@ -17,18 +17,24 @@ from .const import (
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
     CONF_CONNECT_TIMEOUT,
+    CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
     CONF_CONNECTION_MODE,
     CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
+    CONF_MAX_APP_CONNECTIONS,
     CONF_MAX_INTENSITY,
+    CONF_MESSAGES_PER_SECOND,
     CONF_RECONNECT_DELAY,
     CONF_RESPONSE_TIMEOUT,
     CONF_URL,
     DEFAULT_AUTO_RECONNECT,
     DEFAULT_COMMAND_STEP,
+    DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_EMULATED_OPOSSUM,
+    DEFAULT_MAX_APP_CONNECTIONS,
     DEFAULT_MAX_INTENSITY,
+    DEFAULT_MESSAGES_PER_SECOND,
     DEFAULT_NAME,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_RESPONSE_TIMEOUT,
@@ -95,7 +101,26 @@ def _details_schema(mode: str, defaults: Mapping[str, Any]) -> vol.Schema:
     """Show only settings used by the selected transport."""
     if mode == MODE_LOCAL:
         endpoint_field = {
-            vol.Required(CONF_HA_URL, default=defaults.get(CONF_HA_URL, "")): cv.string
+            vol.Required(CONF_HA_URL, default=defaults.get(CONF_HA_URL, "")): cv.string,
+            vol.Required(
+                CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+                default=defaults.get(
+                    CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+                    DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=600)),
+            vol.Required(
+                CONF_MESSAGES_PER_SECOND,
+                default=defaults.get(
+                    CONF_MESSAGES_PER_SECOND, DEFAULT_MESSAGES_PER_SECOND
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+            vol.Required(
+                CONF_MAX_APP_CONNECTIONS,
+                default=defaults.get(
+                    CONF_MAX_APP_CONNECTIONS, DEFAULT_MAX_APP_CONNECTIONS
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=32)),
         }
     else:
         endpoint_field = {

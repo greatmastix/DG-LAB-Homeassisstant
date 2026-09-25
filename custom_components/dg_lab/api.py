@@ -7,6 +7,8 @@ import json
 import logging
 import math
 import secrets
+import time
+from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -30,19 +32,25 @@ from .const import (
     CONF_AUTO_RECONNECT,
     CONF_COMMAND_STEP,
     CONF_CONNECT_TIMEOUT,
+    CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
     CONF_CONNECTION_MODE,
     CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
+    CONF_MAX_APP_CONNECTIONS,
     CONF_MAX_INTENSITY,
+    CONF_MESSAGES_PER_SECOND,
     CONF_RECONNECT_DELAY,
     CONF_RESPONSE_TIMEOUT,
     CONF_URL,
     CONTROL_CAPABLE_DEVICE_TYPES,
     DEFAULT_AUTO_RECONNECT,
     DEFAULT_COMMAND_STEP,
+    DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_EMULATED_OPOSSUM,
+    DEFAULT_MAX_APP_CONNECTIONS,
     DEFAULT_MAX_INTENSITY,
+    DEFAULT_MESSAGES_PER_SECOND,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_RESPONSE_TIMEOUT,
     DEFAULT_WS_URL,
@@ -74,6 +82,9 @@ SOCKET_DISCONNECTED = "disconnected"
 SERVER_PING_INTERVAL = 2
 MAX_MISSED_SERVER_PONGS = 3
 MESSAGE_SIZE_WARNING = 1950
+LOCAL_RATE_LIMIT_WINDOW = 1.0
+LOCAL_CONNECTION_LIMIT_WINDOW = 60.0
+MAX_TRACKED_CONNECTION_SOURCES = 1024
 
 
 class DGLabError(HomeAssistantError):
@@ -266,6 +277,19 @@ def merge_patch(current: Any, patch: Any) -> Any:
     return merged
 
 
+def _rate_limit_retry_after(
+    events: deque[float], now: float, window: float, limit: int
+) -> float | None:
+    """Record one event or return the delay when its rolling window is full."""
+    cutoff = now - window
+    while events and events[0] <= cutoff:
+        events.popleft()
+    if len(events) >= limit:
+        return max(events[0] + window - now, 0.001)
+    events.append(now)
+    return None
+
+
 def normalize_frames(value: Any) -> list[Any]:
     """Normalize Home Assistant service/text pulse frame input."""
     if isinstance(value, str):
@@ -324,6 +348,17 @@ class DGLabClient:
         self.default_max_intensity: int = entry_value(
             entry, CONF_MAX_INTENSITY, DEFAULT_MAX_INTENSITY
         )
+        self.connection_attempts_per_minute: int = entry_value(
+            entry,
+            CONF_CONNECTION_ATTEMPTS_PER_MINUTE,
+            DEFAULT_CONNECTION_ATTEMPTS_PER_MINUTE,
+        )
+        self.messages_per_second: int = entry_value(
+            entry, CONF_MESSAGES_PER_SECOND, DEFAULT_MESSAGES_PER_SECOND
+        )
+        self.max_app_connections: int = entry_value(
+            entry, CONF_MAX_APP_CONNECTIONS, DEFAULT_MAX_APP_CONNECTIONS
+        )
         self.auto_reconnect: bool = entry_value(
             entry, CONF_AUTO_RECONNECT, DEFAULT_AUTO_RECONNECT
         )
@@ -348,6 +383,11 @@ class DGLabClient:
         self._closing = False
         self._ws: ClientWebSocketResponse | None = None
         self._local_peers: dict[str, web.WebSocketResponse] = {}
+        self._pending_local_peers = 0
+        self._local_connection_attempts: OrderedDict[str, deque[float]] = (
+            OrderedDict()
+        )
+        self._local_message_events: dict[str, deque[float]] = {}
         self._emulated_peers: dict[
             str, Callable[[dict[str, Any]], Awaitable[None]]
         ] = {}
@@ -420,6 +460,51 @@ class DGLabClient:
         if key not in self.channel_settings:
             self.channel_settings[key] = DGLabChannelSettings(step=self.command_step)
         return self.channel_settings[key]
+
+    def local_connection_retry_after(self, remote: str | None) -> float | None:
+        """Rate-limit failed local endpoint authentication by source address."""
+        source = remote or "unknown"
+        events = self._local_connection_attempts.get(source)
+        if events is None:
+            if len(self._local_connection_attempts) >= MAX_TRACKED_CONNECTION_SOURCES:
+                self._local_connection_attempts.popitem(last=False)
+            events = deque()
+            self._local_connection_attempts[source] = events
+        else:
+            self._local_connection_attempts.move_to_end(source)
+        return _rate_limit_retry_after(
+            events,
+            time.monotonic(),
+            LOCAL_CONNECTION_LIMIT_WINDOW,
+            self.connection_attempts_per_minute,
+        )
+
+    def try_reserve_local_peer(self) -> bool:
+        """Reserve capacity for one authenticated local app connection."""
+        if (
+            len(self._local_peers) + self._pending_local_peers
+            >= self.max_app_connections
+        ):
+            return False
+        self._pending_local_peers += 1
+        return True
+
+    def release_local_peer_reservation(self) -> None:
+        """Release a pending local app connection reservation."""
+        self._pending_local_peers = max(0, self._pending_local_peers - 1)
+
+    def local_message_rate_limited(self, client_id: str) -> bool:
+        """Return whether an attached app exceeded its inbound message limit."""
+        events = self._local_message_events.setdefault(client_id, deque())
+        return (
+            _rate_limit_retry_after(
+                events,
+                time.monotonic(),
+                LOCAL_RATE_LIMIT_WINDOW,
+                self.messages_per_second,
+            )
+            is not None
+        )
 
     def channel_intensity(self, device: DGLabDevice, channel: int) -> float | None:
         """Return the current channel intensity if the app exposes it."""
@@ -509,6 +594,9 @@ class DGLabClient:
                     pass
                 await peer.close(code=4000, message=b"controller_disconnected")
         self._local_peers.clear()
+        self._pending_local_peers = 0
+        self._local_connection_attempts.clear()
+        self._local_message_events.clear()
 
         if self._ws and not self._ws.closed:
             await self._ws.close(code=1000, message=b"shutdown")
@@ -880,6 +968,9 @@ class DGLabClient:
         self.devices.clear()
         self.channel_settings.clear()
         self._emulated_peers.clear()
+        self._pending_local_peers = 0
+        self._local_connection_attempts.clear()
+        self._local_message_events.clear()
         self._reject_all_pending(DGLabNotConnectedError("DG-LAB websocket disconnected"))
         if self.state != SOCKET_DISCONNECTED:
             self.state = SOCKET_DISCONNECTED
@@ -1010,24 +1101,29 @@ class DGLabClient:
                 {"type": "controller_attached", "clientId": self.target_id}
             )
             self._local_peers[client_id] = peer
+            self._local_message_events[client_id] = deque()
             await self._handle_text(
                 json.dumps({"type": "client_attached", "clientId": client_id})
             )
         except Exception:
             self._local_peers.pop(client_id, None)
+            self._local_message_events.pop(client_id, None)
             raise
         return client_id
 
     async def async_receive_local_peer(self, client_id: str, raw: str) -> None:
         """Process an app frame through the normal controller message handler."""
+        peer = self._local_peers.get(client_id)
+        if peer is None or peer.closed:
+            return
+        if self.local_message_rate_limited(client_id):
+            await peer.close(code=1008, message=b"rate_limit")
+            return
         try:
             frame = json.loads(raw)
         except json.JSONDecodeError:
             return
         if not isinstance(frame, dict):
-            return
-        peer = self._local_peers.get(client_id)
-        if peer is None or peer.closed:
             return
         if frame.get("type") == "ping":
             await peer.send_json(
@@ -1045,6 +1141,7 @@ class DGLabClient:
         if self._local_peers.get(client_id) is not peer:
             return
         self._local_peers.pop(client_id)
+        self._local_message_events.pop(client_id, None)
         await self._handle_text(
             json.dumps({"type": "client_disconnected", "clientId": client_id})
         )

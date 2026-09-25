@@ -53,6 +53,16 @@ ws://192.168.1.10:8123/api/dg_lab/v4/<entry-id>?tid=<pairing-id>
 
 HTTPS Home Assistant addresses use `wss://`. Your Home Assistant HTTP server or reverse proxy must allow WebSocket upgrades.
 
+Direct mode also provides configurable limits for invalid connection attempts per
+source IP, inbound app messages per second, and simultaneous app connections. The
+defaults are 30 attempts per minute, 50 messages per second, and 4 connected apps.
+An app connection that exceeds the message limit is closed; rejected connection
+attempts receive HTTP 429 until their rolling window clears.
+
+The per-source limit uses the client address resolved by Home Assistant. Behind a
+reverse proxy, configure `trusted_proxies` correctly so separate internet clients
+do not all appear as the proxy's address.
+
 ### Virtual Opossum
 
 Enable **Create an emulated Opossum** in the integration's setup or options to add a virtual two-channel Opossum. It appears as **Emulated Opossum**, reports channel state, and supports the same intensity, temporary-intensity, pulse, reset, and stop-operation actions as a connected device. Both channels use the native Opossum `0`–`200` range with steps of `1`.

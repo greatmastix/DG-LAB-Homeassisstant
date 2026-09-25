@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import secrets
 
 from aiohttp import WSMsgType, web
@@ -32,17 +33,27 @@ class DGLabWebSocketView(HomeAssistantView):
             client is None
             or client.mode != MODE_LOCAL
             or not client.connected
-            or not token
-            or not secrets.compare_digest(token, client.target_id or "")
         ):
             raise web.HTTPNotFound()
+        if not token or not secrets.compare_digest(token, client.target_id or ""):
+            retry_after = client.local_connection_retry_after(request.remote)
+            if retry_after is not None:
+                raise web.HTTPTooManyRequests(
+                    headers={"Retry-After": str(math.ceil(retry_after))}
+                )
+            raise web.HTTPNotFound()
+        if not client.try_reserve_local_peer():
+            raise web.HTTPTooManyRequests(headers={"Retry-After": "5"})
 
         peer = web.WebSocketResponse(heartbeat=30, max_msg_size=1_048_576)
-        await peer.prepare(request)
+        reserved = True
         client_id: str | None = None
         heartbeat_task: asyncio.Task[None] | None = None
         try:
+            await peer.prepare(request)
             client_id = await client.async_attach_local_peer(peer)
+            client.release_local_peer_reservation()
+            reserved = False
             heartbeat_task = asyncio.create_task(self._heartbeat(peer))
             async for message in peer:
                 if message.type == WSMsgType.TEXT:
@@ -53,10 +64,12 @@ class DGLabWebSocketView(HomeAssistantView):
                             client_id, message.data.decode("utf-8")
                         )
                     except UnicodeDecodeError:
-                        pass
+                        await client.async_receive_local_peer(client_id, "")
                 elif message.type == WSMsgType.ERROR:
                     break
         finally:
+            if reserved:
+                client.release_local_peer_reservation()
             if heartbeat_task is not None:
                 heartbeat_task.cancel()
             if client_id is not None:

@@ -12,11 +12,17 @@
         "title": "DG-LAB connection settings",
         "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
         "data_description": {
-          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware."
+          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware.",
+          "connection_attempts_per_minute": "Failed pairing attempts allowed from each source IP during any rolling minute.",
+          "messages_per_second": "Inbound WebSocket messages allowed from each app during any rolling second. The connection is closed when exceeded.",
+          "max_app_connections": "Maximum number of external DG-LAB apps that may remain connected simultaneously."
         },
         "data": {
           "name": "Name",
           "ha_url": "Home Assistant URL (direct mode)",
+          "connection_attempts_per_minute": "Failed pairing attempts per minute",
+          "messages_per_second": "Messages per second per app",
+          "max_app_connections": "Maximum simultaneous app connections",
           "url": "WebSocket relay URL (relay mode)",
           "connect_timeout": "Relay connect timeout",
           "response_timeout": "Response timeout",
@@ -45,11 +51,17 @@
         "title": "DG-LAB connection settings",
         "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
         "data_description": {
-          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware."
+          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware.",
+          "connection_attempts_per_minute": "Failed pairing attempts allowed from each source IP during any rolling minute.",
+          "messages_per_second": "Inbound WebSocket messages allowed from each app during any rolling second. The connection is closed when exceeded.",
+          "max_app_connections": "Maximum number of external DG-LAB apps that may remain connected simultaneously."
         },
         "data": {
           "name": "Name",
           "ha_url": "Home Assistant URL (direct mode)",
+          "connection_attempts_per_minute": "Failed pairing attempts per minute",
+          "messages_per_second": "Messages per second per app",
+          "max_app_connections": "Maximum simultaneous app connections",
           "url": "WebSocket relay URL (relay mode)",
           "connect_timeout": "Relay connect timeout",
           "response_timeout": "Response timeout",
