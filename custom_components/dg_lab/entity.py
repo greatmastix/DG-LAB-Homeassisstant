@@ -141,11 +141,17 @@ def hub_device_info(client: DGLabClient) -> DeviceInfo:
 
 def app_device_info(client: DGLabClient, client_id: str) -> DeviceInfo:
     """Return an app pseudo-device info object."""
+    if client.is_emulated_client(client_id):
+        name = "DG-LAB Opossum Emulator"
+        model = "Virtual DG-LAB app"
+    else:
+        name = f"DG-LAB App {short_id(client_id)}"
+        model = "DG-LAB app"
     return DeviceInfo(
         identifiers={(DOMAIN, f"{client.entry.entry_id}_app_{client_id}")},
         manufacturer=MANUFACTURER,
-        name=f"DG-LAB App {short_id(client_id)}",
-        model="DG-LAB app",
+        name=name,
+        model=model,
         via_device=(DOMAIN, client.entry.entry_id),
     )
 

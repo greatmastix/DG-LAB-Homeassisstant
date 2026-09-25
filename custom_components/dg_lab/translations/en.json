@@ -11,6 +11,9 @@
       "details": {
         "title": "DG-LAB connection settings",
         "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
+        "data_description": {
+          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware."
+        },
         "data": {
           "name": "Name",
           "ha_url": "Home Assistant URL (direct mode)",
@@ -20,6 +23,7 @@
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
           "max_intensity": "Maximum intensity safety limit",
+          "emulated_opossum": "Create an emulated Opossum",
           "auto_reconnect": "Reconnect automatically"
         }
       }
@@ -40,6 +44,9 @@
       "details": {
         "title": "DG-LAB connection settings",
         "description": "In direct mode, enter a Home Assistant address reachable from the DG-LAB app.",
+        "data_description": {
+          "emulated_opossum": "Adds a virtual two-channel Opossum for testing dashboards and automations without physical hardware."
+        },
         "data": {
           "name": "Name",
           "ha_url": "Home Assistant URL (direct mode)",
@@ -49,6 +56,7 @@
           "reconnect_delay": "Reconnect delay",
           "command_step": "Default intensity step",
           "max_intensity": "Maximum intensity safety limit",
+          "emulated_opossum": "Create an emulated Opossum",
           "auto_reconnect": "Reconnect automatically"
         }
       }
@@ -56,6 +64,362 @@
     "error": {
       "invalid_websocket_url": "Enter a valid ws:// or wss:// URL.",
       "invalid_home_assistant_url": "Enter a reachable Home Assistant URL starting with http:// or https://."
+    }
+  },
+  "services": {
+    "reconnect": {
+      "name": "Reconnect to DG-LAB",
+      "description": "Reconnect one DG-LAB connection, or every configured connection when none is selected.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "DG-LAB configuration entry to reconnect. Leave empty to reconnect all entries."
+        }
+      }
+    },
+    "request_devices": {
+      "name": "Refresh device list",
+      "description": "Ask one or more connected DG-LAB apps for their current device list.",
+      "fields": {
+        "entity_id": {
+          "name": "App or device entities",
+          "description": "Select entities belonging to the DG-LAB apps or devices to refresh. Multiple entities can be selected."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        }
+      },
+      "sections": {
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "ping": {
+      "name": "Ping app",
+      "description": "Check communication with one or more connected DG-LAB apps.",
+      "fields": {
+        "entity_id": {
+          "name": "App or device entities",
+          "description": "Select entities belonging to the DG-LAB apps to ping. Multiple entities can be selected."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        }
+      },
+      "sections": {
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "add_intensity": {
+      "name": "Adjust intensity",
+      "description": "Increase or decrease intensity on one or more DG-LAB channels.",
+      "fields": {
+        "entity_id": {
+          "name": "Channel entities",
+          "description": "Select number entities on the channels to adjust. Multiple channels can be selected."
+        },
+        "value": {
+          "name": "Change",
+          "description": "Whole-number intensity change. Use a negative value to decrease intensity."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Optional V4 operation priority. Leave empty to use the protocol default."
+        },
+        "immediate": {
+          "name": "Replace existing operation",
+          "description": "Replace an existing operation of the same type on the selected channel."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        },
+        "slot_id": {
+          "name": "Device slot ID",
+          "description": "Advanced: target a physical device by its V4 slot ID."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Advanced: target channel A or B."
+        }
+      },
+      "sections": {
+        "operation_options": {
+          "name": "Operation options",
+          "description": "Optional V4 scheduling and response settings."
+        },
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "set_intensity": {
+      "name": "Set intensity",
+      "description": "Set an absolute intensity on one or more DG-LAB channels.",
+      "fields": {
+        "entity_id": {
+          "name": "Channel entities",
+          "description": "Select number entities on the channels to control. Multiple channels can be selected."
+        },
+        "value": {
+          "name": "Intensity",
+          "description": "Target whole-number intensity within the configured safety limit."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Optional V4 operation priority. Leave empty to use the protocol default."
+        },
+        "immediate": {
+          "name": "Replace existing operation",
+          "description": "Replace an existing operation of the same type on the selected channel."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        },
+        "slot_id": {
+          "name": "Device slot ID",
+          "description": "Advanced: target a physical device by its V4 slot ID."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Advanced: target channel A or B."
+        }
+      },
+      "sections": {
+        "operation_options": {
+          "name": "Operation options",
+          "description": "Optional V4 scheduling and response settings."
+        },
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "set_temp_intensity": {
+      "name": "Set temporary intensity",
+      "description": "Apply an intensity for a limited time on one or more DG-LAB channels.",
+      "fields": {
+        "entity_id": {
+          "name": "Channel entities",
+          "description": "Select number entities on the channels to control. Multiple channels can be selected."
+        },
+        "value": {
+          "name": "Intensity",
+          "description": "Temporary whole-number intensity within the configured safety limit."
+        },
+        "duration_ms": {
+          "name": "Duration",
+          "description": "How long the temporary intensity remains active, in milliseconds."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Optional V4 operation priority. Leave empty to use the protocol default."
+        },
+        "immediate": {
+          "name": "Replace existing operation",
+          "description": "Replace an existing operation of the same type on the selected channel."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        },
+        "slot_id": {
+          "name": "Device slot ID",
+          "description": "Advanced: target a physical device by its V4 slot ID."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Advanced: target channel A or B."
+        }
+      },
+      "sections": {
+        "operation_options": {
+          "name": "Operation options",
+          "description": "Optional V4 scheduling and response settings."
+        },
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "send_pulse": {
+      "name": "Send pulse",
+      "description": "Send waveform frames to one or more DG-LAB channels.",
+      "fields": {
+        "entity_id": {
+          "name": "Channel entities",
+          "description": "Select number entities on the channels that should receive the pulse. Multiple channels can be selected."
+        },
+        "frames": {
+          "name": "Waveform frames",
+          "description": "V4 waveform frame list."
+        },
+        "duration_ms": {
+          "name": "Duration",
+          "description": "Pulse duration in milliseconds."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Optional V4 operation priority. Leave empty to use the protocol default."
+        },
+        "immediate": {
+          "name": "Replace existing operation",
+          "description": "Replace an existing pulse operation on the selected channel."
+        },
+        "version": {
+          "name": "Frame version",
+          "description": "Optional waveform frame format version."
+        },
+        "seq": {
+          "name": "Sequence",
+          "description": "Optional waveform sequence number."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        },
+        "slot_id": {
+          "name": "Device slot ID",
+          "description": "Advanced: target a physical device by its V4 slot ID."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Advanced: target channel A or B."
+        }
+      },
+      "sections": {
+        "operation_options": {
+          "name": "Operation options",
+          "description": "Optional V4 waveform, scheduling, and response settings."
+        },
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "clear_operations": {
+      "name": "Stop operations",
+      "description": "Clear queued and active operations for selected hubs, apps, devices, or channels.",
+      "fields": {
+        "entity_id": {
+          "name": "Target entities",
+          "description": "Select DG-LAB entities. A hub clears all apps, an app clears that app, a device clears that device, and a channel entity clears that channel."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        },
+        "slot_id": {
+          "name": "Device slot ID",
+          "description": "Advanced: target a physical device by its V4 slot ID."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Advanced: target channel A or B."
+        }
+      },
+      "sections": {
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
+    },
+    "send_rpc": {
+      "name": "Send raw RPC",
+      "description": "Send an advanced V4 RPC payload to one or more connected apps.",
+      "fields": {
+        "entity_id": {
+          "name": "App or device entities",
+          "description": "Select entities belonging to the DG-LAB apps that should receive the RPC. Multiple entities can be selected."
+        },
+        "payload": {
+          "name": "RPC payload",
+          "description": "Raw V4 RPC object. The integration adds and tracks the request ID."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum time to wait for each app response."
+        },
+        "config_entry_id": {
+          "name": "Connection",
+          "description": "Advanced: target a DG-LAB configuration entry by ID."
+        },
+        "client_id": {
+          "name": "App client ID",
+          "description": "Advanced: target an app by its V4 client ID."
+        }
+      },
+      "sections": {
+        "advanced_targeting": {
+          "name": "Advanced targeting",
+          "description": "Use raw V4 identifiers instead of the entity picker."
+        }
+      }
     }
   }
 }

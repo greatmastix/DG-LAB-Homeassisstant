@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -31,6 +31,7 @@ from .const import (
     CONF_COMMAND_STEP,
     CONF_CONNECT_TIMEOUT,
     CONF_CONNECTION_MODE,
+    CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
@@ -40,6 +41,7 @@ from .const import (
     DEFAULT_AUTO_RECONNECT,
     DEFAULT_COMMAND_STEP,
     DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_EMULATED_OPOSSUM,
     DEFAULT_MAX_INTENSITY,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_RESPONSE_TIMEOUT,
@@ -58,6 +60,7 @@ from .const import (
     SET_TEMP_INTENSITY,
     friendly_device_name,
 )
+from .emulator import DGLabOpossumEmulator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -299,6 +302,9 @@ class DGLabClient:
         self.auto_reconnect: bool = entry_value(
             entry, CONF_AUTO_RECONNECT, DEFAULT_AUTO_RECONNECT
         )
+        self.emulated_opossum_enabled: bool = entry_value(
+            entry, CONF_EMULATED_OPOSSUM, DEFAULT_EMULATED_OPOSSUM
+        )
 
         self.state = SOCKET_IDLE
         self.target_id: str | None = None
@@ -317,6 +323,12 @@ class DGLabClient:
         self._closing = False
         self._ws: ClientWebSocketResponse | None = None
         self._local_peers: dict[str, web.WebSocketResponse] = {}
+        self._emulated_peers: dict[
+            str, Callable[[dict[str, Any]], Awaitable[None]]
+        ] = {}
+        self._emulator = (
+            DGLabOpossumEmulator(self) if self.emulated_opossum_enabled else None
+        )
         self._missed_server_pongs = 0
         self._request_id_counter = 0
         self._pending: dict[tuple[str, str], asyncio.Future[Any]] = {}
@@ -334,6 +346,10 @@ class DGLabClient:
     def connected_client_ids(self) -> set[str]:
         """Return currently attached app client IDs."""
         return {client_id for client_id, app in self.apps.items() if app.connected}
+
+    def is_emulated_client(self, client_id: str) -> bool:
+        """Return whether a client ID belongs to the built-in emulator."""
+        return bool(self._emulator and self._emulator.owns_client(client_id))
 
     @property
     def app_websocket_url(self) -> str | None:
@@ -440,6 +456,8 @@ class DGLabClient:
             self.last_error = None
             self._set_state(SOCKET_WAITING_FOR_PEER)
             self._notify()
+            if self._emulator is not None:
+                await self._emulator.async_start_local()
             return
         if self._runner_task and not self._runner_task.done():
             return
@@ -452,6 +470,9 @@ class DGLabClient:
         """Stop the websocket client."""
         self._closing = True
         self._stop_server_ping()
+
+        if self._emulator is not None:
+            await self._emulator.async_stop()
 
         for peer in list(self._local_peers.values()):
             if not peer.closed:
@@ -538,6 +559,8 @@ class DGLabClient:
             self._record_error("connection_error", str(err) or err.__class__.__name__)
         finally:
             self._stop_server_ping()
+            if self._emulator is not None:
+                await self._emulator.async_stop_transport()
             if ws is not None and not ws.closed:
                 await ws.close()
             if self._ws is ws:
@@ -562,6 +585,10 @@ class DGLabClient:
                 self._missed_server_pongs = 0
                 self._set_state(SOCKET_WAITING_FOR_PEER)
                 self._start_server_ping()
+                if self._emulator is not None and self.app_websocket_url is not None:
+                    await self._emulator.async_start_relay(
+                        client_id, self.app_websocket_url
+                    )
             return
 
         if frame_type == "client_attached":
@@ -825,6 +852,7 @@ class DGLabClient:
         self.apps.clear()
         self.devices.clear()
         self.channel_settings.clear()
+        self._emulated_peers.clear()
         self._reject_all_pending(DGLabNotConnectedError("DG-LAB websocket disconnected"))
         if self.state != SOCKET_DISCONNECTED:
             self.state = SOCKET_DISCONNECTED
@@ -887,6 +915,13 @@ class DGLabClient:
         """Send a raw protocol frame."""
         if self.mode == MODE_LOCAL:
             client_id = frame.get("clientId")
+            emulator = self._emulated_peers.get(client_id)
+            if frame.get("type") == "message" and emulator is not None:
+                data = frame.get("data")
+                if not isinstance(data, dict):
+                    raise DGLabNotConnectedError("Invalid emulator message")
+                await emulator(data)
+                return
             peer = self._local_peers.get(client_id)
             if frame.get("type") != "message" or peer is None or peer.closed:
                 raise DGLabNotConnectedError("DG-LAB app is not connected")
@@ -907,6 +942,35 @@ class DGLabClient:
                 MESSAGE_SIZE_WARNING,
             )
         await ws.send_str(payload)
+
+    async def async_attach_emulated_peer(
+        self,
+        client_id: str,
+        receiver: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Attach an in-process controlled client through the normal V4 path."""
+        self._emulated_peers[client_id] = receiver
+        await self._handle_text(
+            json.dumps({"type": "client_attached", "clientId": client_id})
+        )
+
+    async def async_receive_emulated_peer(
+        self, client_id: str, data: dict[str, Any]
+    ) -> None:
+        """Process an in-process controlled-client payload."""
+        if client_id not in self._emulated_peers:
+            return
+        await self._handle_message_frame(
+            {"type": "message", "clientId": client_id, "data": data}
+        )
+
+    async def async_detach_emulated_peer(self, client_id: str) -> None:
+        """Detach an in-process controlled client."""
+        if self._emulated_peers.pop(client_id, None) is None:
+            return
+        await self._handle_text(
+            json.dumps({"type": "client_disconnected", "clientId": client_id})
+        )
 
     async def async_attach_local_peer(self, peer: web.WebSocketResponse) -> str:
         """Attach an app to the Home Assistant hosted V4 endpoint."""

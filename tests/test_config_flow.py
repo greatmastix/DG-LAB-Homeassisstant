@@ -16,6 +16,7 @@ from custom_components.dg_lab.config_flow import (
 )
 from custom_components.dg_lab.const import (
     CONF_CONNECTION_MODE,
+    CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
     CONF_URL,
     MODE_LOCAL,
@@ -45,6 +46,7 @@ class ConfigFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(details["step_id"], "details")
         self.assertNotIn(CONF_URL, _field_names(details["data_schema"]))
         self.assertIn(CONF_HA_URL, _field_names(details["data_schema"]))
+        self.assertIn(CONF_EMULATED_OPOSSUM, _field_names(details["data_schema"]))
 
         submitted = details["data_schema"]({
             CONF_NAME: "Test DG-LAB",
@@ -54,6 +56,7 @@ class ConfigFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["type"], FlowResultType.CREATE_ENTRY)
         self.assertNotIn(CONF_URL, result["data"])
         self.assertEqual(result["data"][CONF_CONNECTION_MODE], MODE_LOCAL)
+        self.assertFalse(result["data"][CONF_EMULATED_OPOSSUM])
 
         invalid = await flow.async_step_details(
             {CONF_NAME: "Test DG-LAB", CONF_HA_URL: "not-a-url"}

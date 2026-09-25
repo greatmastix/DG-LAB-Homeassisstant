@@ -1,0 +1,31 @@
+{
+  "services": {
+    "reconnect": {
+      "service": "mdi:reload"
+    },
+    "request_devices": {
+      "service": "mdi:database-refresh-outline"
+    },
+    "ping": {
+      "service": "mdi:access-point-network"
+    },
+    "add_intensity": {
+      "service": "mdi:plus-minus"
+    },
+    "set_intensity": {
+      "service": "mdi:flash"
+    },
+    "set_temp_intensity": {
+      "service": "mdi:timer-flash-outline"
+    },
+    "send_pulse": {
+      "service": "mdi:sine-wave"
+    },
+    "clear_operations": {
+      "service": "mdi:stop-circle-outline"
+    },
+    "send_rpc": {
+      "service": "mdi:code-json"
+    }
+  }
+}

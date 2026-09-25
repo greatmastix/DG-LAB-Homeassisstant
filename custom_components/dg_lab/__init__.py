@@ -24,6 +24,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .api import (
     DGLabClient,
+    DGLabDevice,
     channel_name,
     device_is_connected,
     normalize_channel,
@@ -202,7 +203,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             payload = json.loads(payload)
         if not isinstance(payload, dict):
             raise HomeAssistantError("payload must be a dictionary or JSON object")
-        for target in _app_targets_from_call(hass, call):
+        for target in _app_targets_from_call(hass, call, require_explicit=True):
             assert target.client_id is not None
             await target.client.send_rpc(
                 target.client_id,
@@ -455,21 +456,34 @@ async def _async_check_entity_permissions(
 
 
 def _app_targets_from_call(
-    hass: HomeAssistant, call: ServiceCall
+    hass: HomeAssistant,
+    call: ServiceCall,
+    *,
+    require_explicit: bool = False,
 ) -> list[_ActionTarget]:
     """Resolve one or more app targets from entities or legacy protocol IDs."""
     if _selected_entity_ids(call):
         _reject_mixed_targeting(call, (ATTR_CLIENT_ID,))
         targets = _entity_targets_from_call(hass, call)
-        invalid = [target for target in targets if target.client_id is None]
-        if invalid:
-            raise ServiceValidationError(
-                "Select an entity belonging to a connected DG-LAB app or device"
+        expanded: list[_ActionTarget] = []
+        for target in targets:
+            if target.client_id is not None:
+                expanded.append(_ActionTarget(target.client, target.client_id))
+                continue
+            expanded.extend(
+                _ActionTarget(target.client, client_id)
+                for client_id in sorted(target.client.connected_client_ids)
             )
-        return _deduplicate_targets(targets)
+        if not expanded:
+            raise ServiceValidationError("No DG-LAB apps are currently connected")
+        return _deduplicate_targets(expanded)
 
     client = _client_from_call(hass, call)
     client_id = call.data.get(ATTR_CLIENT_ID)
+    if require_explicit and client_id is None:
+        raise ServiceValidationError(
+            "Select an app or device entity, or provide an app client ID"
+        )
     client_ids = [client_id] if client_id else sorted(client.connected_client_ids)
     if not client_ids:
         raise ServiceValidationError("No DG-LAB apps are currently connected")
@@ -632,7 +646,7 @@ def _target_from_registry_entry(
 
 
 def _channel_from_unique_id(
-    unique_id: str, client: DGLabClient, device: Any
+    unique_id: str, client: DGLabClient, device: DGLabDevice
 ) -> int | None:
     """Extract a channel from a known channel entity unique ID."""
     for channel in (0, 1):

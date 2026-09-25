@@ -71,6 +71,7 @@ add_intensity:
           multiple: true
     value:
       required: true
+      default: 1
       selector:
         number:
           min: -100
@@ -142,6 +143,7 @@ set_intensity:
           multiple: true
     value:
       required: true
+      default: 0
       selector:
         number:
           min: 0
@@ -213,6 +215,7 @@ set_temp_intensity:
           multiple: true
     value:
       required: true
+      default: 10
       selector:
         number:
           min: 0
@@ -221,6 +224,7 @@ set_temp_intensity:
           mode: slider
     duration_ms:
       required: true
+      default: 3000
       selector:
         number:
           min: 1
@@ -297,6 +301,7 @@ send_pulse:
         object:
     duration_ms:
       required: true
+      default: 1000
       selector:
         number:
           min: 1

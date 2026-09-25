@@ -18,6 +18,7 @@ from .const import (
     CONF_COMMAND_STEP,
     CONF_CONNECT_TIMEOUT,
     CONF_CONNECTION_MODE,
+    CONF_EMULATED_OPOSSUM,
     CONF_HA_URL,
     CONF_MAX_INTENSITY,
     CONF_RECONNECT_DELAY,
@@ -26,6 +27,7 @@ from .const import (
     DEFAULT_AUTO_RECONNECT,
     DEFAULT_COMMAND_STEP,
     DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_EMULATED_OPOSSUM,
     DEFAULT_MAX_INTENSITY,
     DEFAULT_NAME,
     DEFAULT_RECONNECT_DELAY,
@@ -137,6 +139,12 @@ def _details_schema(mode: str, defaults: Mapping[str, Any]) -> vol.Schema:
                 CONF_MAX_INTENSITY,
                 default=defaults.get(CONF_MAX_INTENSITY, DEFAULT_MAX_INTENSITY),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=200)),
+            vol.Required(
+                CONF_EMULATED_OPOSSUM,
+                default=defaults.get(
+                    CONF_EMULATED_OPOSSUM, DEFAULT_EMULATED_OPOSSUM
+                ),
+            ): cv.boolean,
             **relay_fields,
         }
     )
